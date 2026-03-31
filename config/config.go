@@ -131,6 +131,21 @@ func AddRepo(configPath string, repo RepoEntry) error {
 	return writeConfig(configPath, cfg)
 }
 
+// InitConfig creates a minimal config file at the given path.
+// Returns an error if the file already exists.
+func InitConfig(path, base string) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("config file already exists: %s", path)
+	}
+
+	if base == "" {
+		base = "~/projects"
+	}
+
+	cfg := &Config{Base: base}
+	return writeConfig(path, cfg)
+}
+
 func ensureConfigFile(path string) (*Config, error) {
 	if _, err := os.Stat(path); err != nil {
 		// Create new config file

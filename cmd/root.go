@@ -21,7 +21,7 @@ var rootCmd = &cobra.Command{
 Use YAML configuration files to define API sources (GitLab groups, GitHub orgs) and
 grepom will discover and manage repositories automatically.`,
 	Example: `  grepom -c work.yml list              # List repos from a specific config
-  grepom init --group my-org/frontend  # Clone all repos in a group
+  grepom clone --group my-org/frontend # Clone all repos in a group
   grepom status                        # Check status of all cloned repos
   grepom pull web-app                  # Pull updates for a single repo`,
 }

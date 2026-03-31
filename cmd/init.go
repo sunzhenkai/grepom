@@ -1,72 +1,92 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
-	gitpkg "github.com/wii/grepom/git"
-	"github.com/wii/grepom/repo"
+	"github.com/wii/grepom/config"
 )
 
 var (
-	initGroup string
+	initBase string
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init [name]",
-	Short: "Clone repositories to local filesystem",
-	Long:  "Clone repositories from configured sources to the base directory. Repositories are cloned preserving group/subgroup directory hierarchy.",
-	Example: `  grepom init                        # Clone all repos
-  grepom init web-app                 # Clone a specific repo
-  grepom init --group my-org/frontend # Clone all repos in a group`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
-		if err != nil {
-			return err
-		}
-
-		filter := repo.Filter{Group: initGroup}
+	Use:   "init",
+	Short: "Initialize a new config file",
+	Long:  "Create a .grepom.yml config file in the current directory. Use --base to specify the repository root directory.",
+	Example: `  grepom init                                    # Create .grepom.yml with default base
+  grepom init --base ~/work/repos                   # Specify a custom base directory
+  grepom init --provider gitlab --url https://gitlab.com --group my-org
+  grepom init --provider github --url https://github.com --org my-org`,
+	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
-			filter.Name = args[0]
+			return fmt.Errorf("unknown argument %q. Did you mean `grepom clone`?", args[0])
+		}
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path, err := resolvedConfigPath()
+		if err != nil {
+			path = configFile
 		}
 
-		resolver := repo.NewResolver(cfg)
-		repos, err := resolver.ResolveAndFilter(context.Background(), filter)
-		if err != nil {
+		if err := config.InitConfig(path, initBase); err != nil {
 			return err
 		}
 
-		if len(repos) == 0 {
-			fmt.Println("No repositories to init.")
-			return nil
-		}
+		fmt.Printf("Created config file: %s\n", path)
 
-		for _, r := range repos {
-			fullPath := repo.FullPath(cfg.Base, r)
-
-			if gitpkg.IsCloned(fullPath) {
-				if verbose {
-					fmt.Printf("skip %s (already cloned)\n", r.Path)
-				}
-				continue
+		// If provider flags are set, add a source
+		if initProvider != "" {
+			source := config.Source{
+				Provider: initProvider,
+				URL:      initURL,
+				Token:    initToken,
 			}
 
-			fmt.Printf("cloning %s...\n", r.Path)
-			if err := gitpkg.Clone(fullPath, r.SSHURL, r.CloneURL); err != nil {
-				fmt.Fprintf(os.Stderr, "error cloning %s: %v\n", r.Path, err)
-				continue
+			for _, g := range initGroup {
+				source.Groups = append(source.Groups, config.GroupSource{
+					Path:      g,
+					Recursive: initRecursive,
+				})
 			}
-			fmt.Printf("  %s done\n", r.Name)
+
+			for _, o := range initOrg {
+				source.Orgs = append(source.Orgs, config.OrgSource{Name: o})
+			}
+
+			if len(source.Groups) == 0 && len(source.Orgs) == 0 {
+				return nil
+			}
+
+			if err := config.AddSource(path, source); err != nil {
+				return err
+			}
+
+			fmt.Printf("Added %s source\n", initProvider)
 		}
 
 		return nil
 	},
 }
 
+var (
+	initProvider  string
+	initURL       string
+	initToken     string
+	initGroup     []string
+	initOrg       []string
+	initRecursive bool
+)
+
 func init() {
-	initCmd.Flags().StringVar(&initGroup, "group", "", "clone all repos under a group")
+	initCmd.Flags().StringVar(&initBase, "base", "", "root directory for cloned repos (default: ~/projects)")
+	initCmd.Flags().StringVar(&initProvider, "provider", "", "provider type (gitlab or github)")
+	initCmd.Flags().StringVar(&initURL, "url", "", "API base URL")
+	initCmd.Flags().StringVar(&initToken, "token", "", "API token (or use ${ENV_VAR} syntax)")
+	initCmd.Flags().StringArrayVar(&initGroup, "group", nil, "group path to fetch (GitLab)")
+	initCmd.Flags().StringArrayVar(&initOrg, "org", nil, "organization name (GitHub)")
+	initCmd.Flags().BoolVar(&initRecursive, "recursive", false, "recursively fetch subgroups")
 	rootCmd.AddCommand(initCmd)
 }
