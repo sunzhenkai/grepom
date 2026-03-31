@@ -3,7 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestLoad_ValidConfig(t *testing.T) {
@@ -213,5 +215,161 @@ func TestAddRepo(t *testing.T) {
 	}
 	if len(cfg.Repos) != 1 || cfg.Repos[0].Name != "special" {
 		t.Error("repo not added correctly")
+	}
+}
+
+func TestSyncGroups_AddNewGroups(t *testing.T) {
+	content := `
+base: ~/projects
+sources:
+  - provider: gitlab
+    url: https://gitlab.com
+    token: test
+    groups:
+      - path: my-org/frontend
+        recursive: true
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	newGroups := []GroupSource{
+		{Path: "my-org/backend", Recursive: true},
+		{Path: "my-org/mobile", Recursive: true},
+	}
+
+	err := SyncGroups(path, 0, newGroups)
+	if err != nil {
+		t.Fatalf("SyncGroups failed: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after SyncGroups failed: %v", err)
+	}
+
+	if len(cfg.Sources[0].Groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d", len(cfg.Sources[0].Groups))
+	}
+
+	// Original group should be preserved
+	if cfg.Sources[0].Groups[0].Path != "my-org/frontend" {
+		t.Errorf("original group path wrong: %s", cfg.Sources[0].Groups[0].Path)
+	}
+}
+
+func TestSyncGroups_NoDuplicates(t *testing.T) {
+	content := `
+base: ~/projects
+sources:
+  - provider: gitlab
+    url: https://gitlab.com
+    token: test
+    groups:
+      - path: my-org/frontend
+        recursive: true
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	newGroups := []GroupSource{
+		{Path: "my-org/frontend", Recursive: true},
+		{Path: "my-org/backend", Recursive: true},
+	}
+
+	err := SyncGroups(path, 0, newGroups)
+	if err != nil {
+		t.Fatalf("SyncGroups failed: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after SyncGroups failed: %v", err)
+	}
+
+	// Should only have 2 groups (no duplicate)
+	if len(cfg.Sources[0].Groups) != 2 {
+		t.Fatalf("expected 2 groups (no duplicates), got %d", len(cfg.Sources[0].Groups))
+	}
+}
+
+func TestSyncGroups_NoChanges(t *testing.T) {
+	content := `
+base: ~/projects
+sources:
+  - provider: gitlab
+    url: https://gitlab.com
+    token: test
+    groups:
+      - path: my-org/frontend
+        recursive: true
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+	originalContent := content
+
+	newGroups := []GroupSource{
+		{Path: "my-org/frontend", Recursive: true},
+	}
+
+	err := SyncGroups(path, 0, newGroups)
+	if err != nil {
+		t.Fatalf("SyncGroups failed: %v", err)
+	}
+
+	// File should not have been rewritten (no new groups)
+	after, _ := os.ReadFile(path)
+	if string(after) != originalContent {
+		t.Error("config file should not be rewritten when no new groups")
+	}
+}
+
+func TestSyncGroups_InvalidSourceIndex(t *testing.T) {
+	content := `
+base: ~/projects
+sources:
+  - provider: gitlab
+    url: https://gitlab.com
+    token: test
+    groups:
+      - path: my-org/frontend
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	err := SyncGroups(path, 5, []GroupSource{{Path: "new-group"}})
+	if err == nil {
+		t.Fatal("expected error for invalid source index")
+	}
+}
+
+func TestWithFileLock_ConcurrentAccess(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte("base: ~/projects"), 0644)
+
+	var wg sync.WaitGroup
+	results := make([]error, 2)
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx] = WithFileLock(path, 5*time.Second, func() error {
+				time.Sleep(100 * time.Millisecond)
+				return nil
+			})
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i, err := range results {
+		if err != nil {
+			t.Errorf("goroutine %d failed: %v", i, err)
+		}
 	}
 }

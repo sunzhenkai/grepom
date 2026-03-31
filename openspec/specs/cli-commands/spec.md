@@ -3,9 +3,18 @@ The system SHALL provide a root command `grepom` with the following global flags
 - `-c, --config`: path to the YAML configuration file (optional, default: `.grepom.yml`)
 - `--verbose`: enable verbose output
 
+The system SHALL also provide the following subcommands:
+- `init`: initialize configuration file
+- `clone`: clone repositories
+- `list`: list discovered repositories
+- `status`: show git status
+- `pull`: pull updates
+- `add`: add source or repository
+- `sync`: synchronize repositories and update configuration
+
 #### Scenario: Show help
 - **WHEN** user runs `grepom --help`
-- **THEN** the system displays available commands and global flags
+- **THEN** the system displays available commands (including `sync`) and global flags
 
 ### Requirement: clone command
 系统 SHALL 提供 `grepom clone` 命令，将仓库 clone 到本地文件系统 `<base>/<path>`，按需创建目录。

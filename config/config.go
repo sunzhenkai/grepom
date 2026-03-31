@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -92,6 +94,9 @@ func (c *Config) validate() error {
 		if s.URL == "" {
 			return fmt.Errorf("config: sources[%d]: 'url' field is required", i)
 		}
+		if !strings.HasPrefix(s.URL, "http://") && !strings.HasPrefix(s.URL, "https://") {
+			c.Sources[i].URL = "https://" + s.URL
+		}
 	}
 	return nil
 }
@@ -155,6 +160,75 @@ func ensureConfigFile(path string) (*Config, error) {
 		return cfg, nil
 	}
 	return Load(path)
+}
+
+// WithFileLock acquires an exclusive file lock on the given path,
+// executes fn, then releases the lock. Returns an error if the lock
+// cannot be acquired within the timeout.
+func WithFileLock(path string, timeout time.Duration, fn func() error) error {
+	lockPath := path + ".lock"
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("open lock file: %w", err)
+	}
+	defer func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		os.Remove(lockPath)
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+			done <- fmt.Errorf("acquire lock: %w", err)
+			return
+		}
+		done <- fn()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("timed out waiting for config lock (another sync may be running)")
+	}
+}
+
+// SyncGroups reads the config file, appends new groups to the specified source
+// (only if not already present), and writes back. Protected by file lock.
+func SyncGroups(configPath string, sourceIndex int, newGroups []GroupSource) error {
+	return WithFileLock(configPath, 30*time.Second, func() error {
+		cfg, err := Load(configPath)
+		if err != nil {
+			return err
+		}
+
+		if sourceIndex < 0 || sourceIndex >= len(cfg.Sources) {
+			return fmt.Errorf("source index %d out of range (0-%d)", sourceIndex, len(cfg.Sources)-1)
+		}
+
+		existing := cfg.Sources[sourceIndex].Groups
+		added := 0
+		for _, ng := range newGroups {
+			found := false
+			for _, eg := range existing {
+				if eg.Path == ng.Path {
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.Sources[sourceIndex].Groups = append(cfg.Sources[sourceIndex].Groups, ng)
+				added++
+			}
+		}
+
+		if added == 0 {
+			return nil
+		}
+
+		return writeConfig(configPath, cfg)
+	})
 }
 
 func writeConfig(path string, cfg *Config) error {

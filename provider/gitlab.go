@@ -136,6 +136,24 @@ func (g *GitLabProvider) getGroupProjects(ctx context.Context, source config.Sou
 	return allProjects, nil
 }
 
+func (g *GitLabProvider) ListSubGroups(ctx context.Context, source config.Source, groupPath string) ([]string, error) {
+	group, err := g.getGroupByPath(ctx, source, groupPath)
+	if err != nil {
+		return nil, err
+	}
+
+	subgroups, err := g.getSubgroups(ctx, source, group.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	paths := make([]string, 0, len(subgroups))
+	for _, sg := range subgroups {
+		paths = append(paths, sg.FullPath)
+	}
+	return paths, nil
+}
+
 func (g *GitLabProvider) getSubgroups(ctx context.Context, source config.Source, groupID int) ([]gitlabGroup, error) {
 	url := fmt.Sprintf("%s/api/v4/groups/%d/subgroups?per_page=100", source.URL, groupID)
 
