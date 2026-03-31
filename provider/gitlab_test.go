@@ -1,0 +1,142 @@
+package provider
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/wii/grepom/config"
+)
+
+func TestGitLabProvider_ListRepos(t *testing.T) {
+	group := gitlabGroup{ID: 123, Path: "frontend", FullPath: "my-org/frontend"}
+	projects := []gitlabProject{
+		{Name: "web-app", PathWithNamespace: "my-org/frontend/web-app", HTTPURLToRepo: "https://gitlab.com/my-org/frontend/web-app.git", SSHURLToRepo: "git@gitlab.com:my-org/frontend/web-app.git"},
+		{Name: "api", PathWithNamespace: "my-org/frontend/api", HTTPURLToRepo: "https://gitlab.com/my-org/frontend/api.git", SSHURLToRepo: "git@gitlab.com:my-org/frontend/api.git"},
+	}
+	subgroups := []gitlabGroup{
+		{ID: 456, Path: "components", FullPath: "my-org/frontend/components"},
+	}
+	subProjects := []gitlabProject{
+		{Name: "ui-lib", PathWithNamespace: "my-org/frontend/components/ui-lib", HTTPURLToRepo: "https://gitlab.com/my-org/frontend/components/ui-lib.git", SSHURLToRepo: "git@gitlab.com:my-org/frontend/components/ui-lib.git"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/groups/") && !strings.Contains(path, "/projects") && !strings.Contains(path, "/subgroups") {
+			json.NewEncoder(w).Encode(group)
+		} else if path == "/api/v4/groups/123/projects" {
+			json.NewEncoder(w).Encode(projects)
+		} else if path == "/api/v4/groups/123/subgroups" {
+			json.NewEncoder(w).Encode(subgroups)
+		} else if path == "/api/v4/groups/456/projects" {
+			json.NewEncoder(w).Encode(subProjects)
+		} else if path == "/api/v4/groups/456/subgroups" {
+			json.NewEncoder(w).Encode([]gitlabGroup{})
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	source := config.Source{
+		Provider: "gitlab",
+		URL:      ts.URL,
+		Token:    "test-token",
+		Groups:   []config.GroupSource{{Path: "my-org/frontend", Recursive: true}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), source)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 3 {
+		t.Fatalf("expected 3 repos, got %d", len(repos))
+	}
+
+	names := map[string]bool{}
+	for _, r := range repos {
+		names[r.Name] = true
+	}
+	for _, name := range []string{"web-app", "api", "ui-lib"} {
+		if !names[name] {
+			t.Errorf("missing repo %s", name)
+		}
+	}
+
+	// Verify path hierarchy preserved
+	for _, r := range repos {
+		if r.Name == "ui-lib" {
+			expected := "my-org/frontend/components/ui-lib"
+			if r.Path != expected {
+				t.Errorf("expected path %s, got %s", expected, r.Path)
+			}
+		}
+	}
+}
+
+func TestGitLabProvider_NonRecursive(t *testing.T) {
+	group := gitlabGroup{ID: 123, Path: "frontend", FullPath: "my-org/frontend"}
+	projects := []gitlabProject{
+		{Name: "web-app", PathWithNamespace: "my-org/frontend/web-app"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/groups/") && !strings.Contains(path, "/projects") && !strings.Contains(path, "/subgroups") {
+			json.NewEncoder(w).Encode(group)
+		} else if path == "/api/v4/groups/123/projects" {
+			json.NewEncoder(w).Encode(projects)
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	source := config.Source{
+		Provider: "gitlab",
+		URL:      ts.URL,
+		Token:    "test-token",
+		Groups:   []config.GroupSource{{Path: "my-org/frontend", Recursive: false}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), source)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (non-recursive), got %d", len(repos))
+	}
+}
+
+func TestGitLabProvider_Unauthorized(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		w.Write([]byte(`{"message": "401 Unauthorized"}`))
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	source := config.Source{
+		Provider: "gitlab",
+		URL:      ts.URL,
+		Token:    "bad-token",
+		Groups:   []config.GroupSource{{Path: "my-org"}},
+	}
+
+	_, err := p.ListRepos(context.Background(), source)
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+}

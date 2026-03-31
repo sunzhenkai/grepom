@@ -1,0 +1,21 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+context: |
+  基础语言 GO
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+rules:
+  proposal:
+    - 默认使用中文撰写 proposal；如需英文，必须由用户明确指定。
+  design:
+    - 默认使用中文撰写 design；如需英文，必须由用户明确指定。
+  specs:
+    - 默认使用中文撰写 specs；如需英文，必须由用户明确指定。
+  tasks:
+    - 默认使用中文撰写 tasks；如需英文，必须由用户明确指定。
