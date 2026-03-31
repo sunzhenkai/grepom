@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -11,18 +13,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// envVarPattern matches ${VAR_NAME} placeholder syntax in token fields
+var envVarPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)}$`)
+
 type Config struct {
-	Base    string       `yaml:"base"`
-	Sources []Source     `yaml:"sources"`
-	Repos   []RepoEntry  `yaml:"repos"`
+	Base      string         `yaml:"base"`
+	Sources   []Source       `yaml:"sources"`
+	Repos     []RepoEntry    `yaml:"repos"`
+	rawTokens map[int]string // original token strings (with ${...} placeholders) for write-back
 }
 
 type Source struct {
-	Provider string         `yaml:"provider"`
-	URL      string         `yaml:"url"`
-	Token    string         `yaml:"token"`
-	Groups   []GroupSource  `yaml:"groups"`
-	Orgs     []OrgSource    `yaml:"orgs"`
+	Name     string        `yaml:"name,omitempty"`
+	Provider string        `yaml:"provider"`
+	URL      string        `yaml:"url"`
+	Token    string        `yaml:"token"`
+	Groups   []GroupSource `yaml:"groups"`
+	Orgs     []OrgSource   `yaml:"orgs"`
 }
 
 type GroupSource struct {
@@ -46,12 +53,22 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	// Expand environment variables
-	expanded := os.ExpandEnv(string(data))
-
 	var cfg Config
-	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	// Save raw token values and resolve environment variable placeholders
+	cfg.rawTokens = make(map[int]string)
+	for i := range cfg.Sources {
+		raw := cfg.Sources[i].Token
+		cfg.rawTokens[i] = raw
+
+		resolved, err := resolveToken(raw)
+		if err != nil {
+			return nil, fmt.Errorf("config: sources[%d]: %w", i, err)
+		}
+		cfg.Sources[i].Token = resolved
 	}
 
 	// Expand tilde in base path
@@ -62,6 +79,49 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// resolveToken checks if the token is an environment variable placeholder (${VAR})
+// and resolves it to the actual value. Returns the original value if not a placeholder.
+// Returns an error if the placeholder references an unset environment variable.
+func resolveToken(token string) (string, error) {
+	if token == "" {
+		return "", nil
+	}
+
+	matches := envVarPattern.FindStringSubmatch(token)
+	if matches == nil {
+		return token, nil
+	}
+
+	envName := matches[1]
+	value, ok := os.LookupEnv(envName)
+	if !ok {
+		return "", fmt.Errorf("token: environment variable %s is not set", envName)
+	}
+	return value, nil
+}
+
+// FindSource finds a source by name or index string.
+// It first tries to match by name, then falls back to numeric index.
+func (c *Config) FindSource(nameOrIndex string) (int, *Source, error) {
+	// Try name match first
+	for i, s := range c.Sources {
+		if s.Name == nameOrIndex {
+			return i, &c.Sources[i], nil
+		}
+	}
+
+	// Try numeric index
+	idx, err := strconv.Atoi(nameOrIndex)
+	if err == nil {
+		if idx < 0 || idx >= len(c.Sources) {
+			return -1, nil, fmt.Errorf("source index %d out of range (0-%d)", idx, len(c.Sources)-1)
+		}
+		return idx, &c.Sources[idx], nil
+	}
+
+	return -1, nil, fmt.Errorf("source %q not found (no source with that name or index)", nameOrIndex)
 }
 
 func FindConfig(explicitPath string) (string, error) {
@@ -84,7 +144,17 @@ func (c *Config) validate() error {
 	if c.Base == "" {
 		return fmt.Errorf("config: 'base' field is required")
 	}
+
+	// Check source name uniqueness
+	names := make(map[string]bool)
 	for i, s := range c.Sources {
+		if s.Name != "" {
+			if names[s.Name] {
+				return fmt.Errorf("config: duplicate source name %q", s.Name)
+			}
+			names[s.Name] = true
+		}
+
 		if s.Provider == "" {
 			return fmt.Errorf("config: sources[%d]: 'provider' field is required", i)
 		}
@@ -118,8 +188,22 @@ func AddSource(configPath string, source Source) error {
 		return err
 	}
 
-	// Expand env vars before writing
+	// Save raw token and resolve it for runtime use
+	newIdx := len(cfg.Sources)
+	rawToken := source.Token
+	resolved, err := resolveToken(rawToken)
+	if err != nil {
+		return err
+	}
+	source.Token = resolved
+
 	cfg.Sources = append(cfg.Sources, source)
+
+	// Store raw token for write-back
+	if cfg.rawTokens == nil {
+		cfg.rawTokens = make(map[int]string)
+	}
+	cfg.rawTokens[newIdx] = rawToken
 
 	return writeConfig(configPath, cfg)
 }
@@ -231,6 +315,39 @@ func SyncGroups(configPath string, sourceIndex int, newGroups []GroupSource) err
 	})
 }
 
+// SyncRepos reads the config file, appends new repos (dedup by URL),
+// and writes back. Returns the number of repos added. Protected by file lock.
+func SyncRepos(configPath string, newRepos []RepoEntry) (int, error) {
+	var added int
+	err := WithFileLock(configPath, 30*time.Second, func() error {
+		cfg, err := Load(configPath)
+		if err != nil {
+			return err
+		}
+
+		for _, nr := range newRepos {
+			found := false
+			for _, er := range cfg.Repos {
+				if er.URL == nr.URL {
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.Repos = append(cfg.Repos, nr)
+				added++
+			}
+		}
+
+		if added == 0 {
+			return nil
+		}
+
+		return writeConfig(configPath, cfg)
+	})
+	return added, err
+}
+
 func writeConfig(path string, cfg *Config) error {
 	// Re-tilde-ify base for storage
 	base := cfg.Base
@@ -238,10 +355,31 @@ func writeConfig(path string, cfg *Config) error {
 		cfg.Base = "~/" + strings.TrimPrefix(base, home+"/")
 	}
 
+	// Restore raw tokens for storage (preserve ${VAR} placeholders)
+	resolvedTokens := make(map[int]string)
+	for i := range cfg.Sources {
+		if raw, ok := cfg.rawTokens[i]; ok {
+			resolvedTokens[i] = cfg.Sources[i].Token
+			cfg.Sources[i].Token = raw
+		}
+	}
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
+		// Restore resolved tokens even on error
+		for i, t := range resolvedTokens {
+			cfg.Sources[i].Token = t
+		}
 		return fmt.Errorf("marshal config: %w", err)
 	}
+
+	// Restore resolved tokens after marshaling
+	for i, t := range resolvedTokens {
+		cfg.Sources[i].Token = t
+	}
+
+	// Restore base path
+	cfg.Base = base
 
 	return os.WriteFile(path, data, 0644)
 }

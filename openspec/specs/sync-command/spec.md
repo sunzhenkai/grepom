@@ -1,25 +1,25 @@
 ### Requirement: sync 命令
-系统 SHALL 提供 `grepom sync` 命令，对配置中的 group/org 执行同步操作：从远程 API 发现仓库，clone 新仓库、pull 已有仓库，并将远程新发现的子 group/org 追加到配置文件。
+`sync` 命令 SHALL 从远程 API 发现仓库信息和子 group/org，将新发现的条目追加到配置文件。sync 命令 SHALL NOT 执行 clone 或 pull 操作。
 
 #### Scenario: 同步所有 source 的所有 group/org
 - **WHEN** 用户运行 `grepom sync`（无参数）
-- **THEN** 系统对所有配置中的 source 下所有 group/org 执行同步，clone 新仓库、pull 已有仓库，并将新发现的子 group/org 追加到配置文件
+- **THEN** 系统对所有配置中的 source 下所有 group/org 执行远程发现，将新发现的仓库追加到配置的 repos 列表，将新发现的子 group 追加到对应 source 的 groups 列表，不执行 clone 或 pull
 
 #### Scenario: 同步指定 source
-- **WHEN** 用户运行 `grepom sync --source 0`（按索引指定 source）
-- **THEN** 系统仅同步该 source 下的 group/org
+- **WHEN** 用户运行 `grepom sync --source my-gitlab`（按名称指定 source）
+- **THEN** 系统仅对该 source 下的 group/org 执行远程发现并更新配置
 
 #### Scenario: 同步指定 group
 - **WHEN** 用户运行 `grepom sync --group my-org/frontend`
-- **THEN** 系统仅同步匹配该 group 路径的仓库，并检查该 group 下是否有新的子 group 需要追加
+- **THEN** 系统仅发现匹配该 group 路径的仓库并更新配置
 
 #### Scenario: 同步指定 org
 - **WHEN** 用户运行 `grepom sync --org my-org`
-- **THEN** 系统仅同步该 org 下的仓库
+- **THEN** 系统仅发现该 org 下的仓库并更新配置
 
 #### Scenario: 同步时无新内容
 - **WHEN** 用户运行 `grepom sync` 且没有新仓库也没有新的子 group/org
-- **THEN** 系统仅对已有仓库执行 pull，不修改配置文件
+- **THEN** 系统不修改配置文件，输出同步摘要
 
 ### Requirement: sync 配置更新策略（只增不删）
 sync 命令在更新配置文件时 SHALL 仅追加新发现的 group/org 条目，不删除或修改已有条目。

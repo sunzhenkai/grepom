@@ -7,28 +7,31 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wii/grepom/config"
-	gitpkg "github.com/wii/grepom/git"
 	"github.com/wii/grepom/provider"
-	"github.com/wii/grepom/repo"
 )
 
 var (
-	syncSource int
+	syncSource string
 	syncGroup  string
 	syncOrg    string
 )
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Synchronize repositories and update configuration",
-	Long: `Sync discovers new repositories from configured sources, clones new repos,
-pulls existing repos, and appends newly discovered sub-groups to the config file.
+	Short: "Synchronize repository metadata and update configuration",
+	Long: `Sync discovers new repositories and sub-groups from configured API sources,
+and saves the discovered information to the config file.
 
-Only new groups are added to the config; existing entries are never removed.`,
-	Example: `  grepom sync                        # Sync all sources
-  grepom sync --source 0              # Sync a specific source by index
-  grepom sync --group my-org/frontend # Sync a specific group
-  grepom sync --org my-org            # Sync a specific org`,
+This command only updates configuration metadata — it does NOT clone or pull
+repositories. After running sync, use "grepom clone" to clone newly discovered
+repos and "grepom pull" to update existing ones.
+
+Only new groups and repos are added to the config; existing entries are never removed.`,
+	Example: `  grepom sync                            # Sync all sources
+  grepom sync --source my-gitlab         # Sync a specific source by name
+  grepom sync --source 0                 # Sync a specific source by index
+  grepom sync --group my-org/frontend    # Sync a specific group
+  grepom sync --org my-org               # Sync a specific org`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -41,21 +44,29 @@ Only new groups are added to the config; existing entries are never removed.`,
 		}
 
 		// Determine which sources to process
-		sources := cfg.Sources
-		if syncSource > 0 {
-			if syncSource >= len(sources) {
-				return fmt.Errorf("source index %d out of range (0-%d)", syncSource, len(sources)-1)
+		type sourceInfo struct {
+			index  int
+			source config.Source
+		}
+		var sourcesToProcess []sourceInfo
+
+		if syncSource != "" {
+			idx, src, err := cfg.FindSource(syncSource)
+			if err != nil {
+				return err
 			}
-			sources = sources[syncSource : syncSource+1]
+			sourcesToProcess = append(sourcesToProcess, sourceInfo{index: idx, source: *src})
+		} else {
+			for i, s := range cfg.Sources {
+				sourcesToProcess = append(sourcesToProcess, sourceInfo{index: i, source: s})
+			}
 		}
 
-		var totalCloned, totalPulled, totalNewGroups int
+		var totalRepos, totalNewRepos, totalNewGroups int
 
-		for si, source := range sources {
-			sourceIdx := syncSource
-			if syncSource <= 0 {
-				sourceIdx = si
-			}
+		for _, si := range sourcesToProcess {
+			sourceIdx := si.index
+			source := si.source
 
 			p, err := provider.Get(source.Provider)
 			if err != nil {
@@ -95,30 +106,35 @@ Only new groups are added to the config; existing entries are never removed.`,
 				continue
 			}
 
+			totalRepos += len(repos)
 			if verbose {
-				fmt.Printf("source %d: found %d repos\n", sourceIdx, len(repos))
+				sourceLabel := fmt.Sprintf("source %d", sourceIdx)
+				if source.Name != "" {
+					sourceLabel = fmt.Sprintf("source %q", source.Name)
+				}
+				fmt.Printf("%s: found %d repos\n", sourceLabel, len(repos))
 			}
 
-			// Clone new repos, pull existing
+			// Convert discovered repos to RepoEntry list for config
+			var newRepoEntries []config.RepoEntry
 			for _, r := range repos {
-				fullPath := repo.FullPath(cfg.Base, r)
+				newRepoEntries = append(newRepoEntries, config.RepoEntry{
+					Name: r.Name,
+					URL:  r.CloneURL,
+					Path: r.Path,
+				})
+			}
 
-				if gitpkg.IsCloned(fullPath) {
+			// Save discovered repos to config
+			if len(newRepoEntries) > 0 {
+				added, err := config.SyncRepos(configPath, newRepoEntries)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "error updating repos in config: %v\n", err)
+				} else if added > 0 {
+					totalNewRepos += added
 					if verbose {
-						fmt.Printf("pulling %s...\n", r.Path)
+						fmt.Printf("added %d new repos to config\n", added)
 					}
-					if err := gitpkg.Pull(fullPath); err != nil {
-						fmt.Fprintf(os.Stderr, "error pulling %s: %v\n", r.Path, err)
-						continue
-					}
-					totalPulled++
-				} else {
-					fmt.Printf("cloning %s...\n", r.Path)
-					if err := gitpkg.Clone(fullPath, r.SSHURL, r.CloneURL); err != nil {
-						fmt.Fprintf(os.Stderr, "error cloning %s: %v\n", r.Path, err)
-						continue
-					}
-					totalCloned++
 				}
 			}
 
@@ -173,14 +189,17 @@ Only new groups are added to the config; existing entries are never removed.`,
 		}
 
 		// Summary
-		fmt.Printf("sync complete: %d cloned, %d pulled, %d new groups\n", totalCloned, totalPulled, totalNewGroups)
+		fmt.Printf("sync complete: %d repos discovered, %d new repos saved, %d new groups\n", totalRepos, totalNewRepos, totalNewGroups)
+		if totalNewRepos > 0 {
+			fmt.Println("Run 'grepom clone' to clone new repositories.")
+		}
 
 		return nil
 	},
 }
 
 func init() {
-	syncCmd.Flags().IntVar(&syncSource, "source", -1, "sync a specific source by index")
+	syncCmd.Flags().StringVar(&syncSource, "source", "", "sync a specific source by name or index")
 	syncCmd.Flags().StringVar(&syncGroup, "group", "", "sync repos under a specific group path")
 	syncCmd.Flags().StringVar(&syncOrg, "org", "", "sync repos under a specific org name")
 	rootCmd.AddCommand(syncCmd)

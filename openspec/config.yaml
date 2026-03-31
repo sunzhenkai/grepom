@@ -5,6 +5,7 @@ schema: spec-driven
 # Add your tech stack, conventions, style guides, domain knowledge, etc.
 # Example:
 context: |
+  注释、思考、提问等默认使用中文
   基础语言 GO
 
 # Per-artifact rules (optional)

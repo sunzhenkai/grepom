@@ -11,7 +11,7 @@ var addCmd = &cobra.Command{
 	Use:   "add",
 	Short: "Add a source or repository to the config file",
 	Long:  "Append a new API source or explicit repository entry to the configuration file.",
-	Example: `  grepom add source --provider gitlab --url https://gitlab.com --group my-org/frontend --recursive
+	Example: `  grepom add source --name my-gitlab --provider gitlab --url https://gitlab.com --group my-org/frontend --recursive
   grepom add source --provider github --url https://github.com --org my-org
   grepom add repo --name special --url https://gitlab.com/other/special.git --path ./special`,
 }
@@ -23,6 +23,7 @@ func init() {
 // add source subcommand
 var (
 	addProvider  string
+	addName      string
 	addURL       string
 	addToken     string
 	addGroup     []string
@@ -51,6 +52,7 @@ var addSourceCmd = &cobra.Command{
 		}
 
 		source := config.Source{
+			Name:     addName,
 			Provider: addProvider,
 			URL:      addURL,
 			Token:    addToken,
@@ -82,6 +84,7 @@ var addSourceCmd = &cobra.Command{
 
 func init() {
 	addSourceCmd.Flags().StringVar(&addProvider, "provider", "", "provider type (gitlab or github)")
+	addSourceCmd.Flags().StringVar(&addName, "name", "", "optional name to identify this source (e.g. my-gitlab)")
 	addSourceCmd.Flags().StringVar(&addURL, "url", "", "API base URL")
 	addSourceCmd.Flags().StringVar(&addToken, "token", "", "API token (or use ${ENV_VAR} syntax)")
 	addSourceCmd.Flags().StringArrayVar(&addGroup, "group", nil, "group path to fetch (GitLab)")
