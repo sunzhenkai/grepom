@@ -26,6 +26,7 @@ var (
 	addResProvider string
 	addResURL      string
 	addResToken    string
+	addResSSHKey   string
 )
 
 var addResourceCmd = &cobra.Command{
@@ -55,6 +56,7 @@ var addResourceCmd = &cobra.Command{
 			Provider: addResProvider,
 			URL:      addResURL,
 			Token:    addResToken,
+			SSHKey:   addResSSHKey,
 		}
 
 		if err := config.AddResource(path, addResName, res); err != nil {
@@ -71,6 +73,7 @@ func init() {
 	addResourceCmd.Flags().StringVar(&addResProvider, "provider", "", "provider type (gitlab or github)")
 	addResourceCmd.Flags().StringVar(&addResURL, "url", "", "API base URL")
 	addResourceCmd.Flags().StringVar(&addResToken, "token", "", "API token (supports ${ENV_VAR} syntax)")
+	addResourceCmd.Flags().StringVar(&addResSSHKey, "ssh-key", "", "SSH private key path for clone (supports ~/")
 	addCmd.AddCommand(addResourceCmd)
 }
 
@@ -81,6 +84,8 @@ var (
 	addGroupPath     string
 	addGroupLocal    string
 	addGroupRecurse  bool
+	addGroupSSHKey   string
+	addGroupToken    string
 )
 
 var addGroupCmd = &cobra.Command{
@@ -109,6 +114,8 @@ var addGroupCmd = &cobra.Command{
 			Path:      addGroupPath,
 			LocalPath: addGroupLocal,
 			Recursive: addGroupRecurse,
+			SSHKey:    addGroupSSHKey,
+			Token:     addGroupToken,
 		}
 
 		if err := config.AddGroup(path, group); err != nil {
@@ -126,6 +133,8 @@ func init() {
 	addGroupCmd.Flags().StringVar(&addGroupPath, "path", "", "remote group path (e.g. my-org/frontend)")
 	addGroupCmd.Flags().StringVar(&addGroupLocal, "local-path", "", "local directory path relative to base (default: ./<name>)")
 	addGroupCmd.Flags().BoolVar(&addGroupRecurse, "recursive", false, "recursively discover subgroups (GitLab only)")
+	addGroupCmd.Flags().StringVar(&addGroupSSHKey, "ssh-key", "", "SSH private key path for clone (overrides resource)")
+	addGroupCmd.Flags().StringVar(&addGroupToken, "token", "", "token for clone (overrides resource, supports ${ENV_VAR})")
 	addCmd.AddCommand(addGroupCmd)
 }
 
@@ -137,6 +146,8 @@ var (
 	addRepoLocalPath string
 	addRepoGroup     string
 	addRepoPath      string
+	addRepoSSHKey    string
+	addRepoToken     string
 )
 
 var addRepoCmd = &cobra.Command{
@@ -200,5 +211,7 @@ func init() {
 	addRepoCmd.Flags().StringVar(&addRepoLocalPath, "local-path", "", "local path relative to base (default: ./<name>)")
 	addRepoCmd.Flags().StringVar(&addRepoGroup, "group", "", "group name to add this repo to (omit for standalone)")
 	addRepoCmd.Flags().StringVar(&addRepoPath, "path", "", "remote path for group repo (e.g. my-org/frontend/repo-name)")
+	addRepoCmd.Flags().StringVar(&addRepoSSHKey, "ssh-key", "", "SSH private key path for clone (overrides resource)")
+	addRepoCmd.Flags().StringVar(&addRepoToken, "token", "", "token for clone (overrides resource, supports ${ENV_VAR}) syntax)")
 	addCmd.AddCommand(addRepoCmd)
 }

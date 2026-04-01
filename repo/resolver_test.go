@@ -220,3 +220,172 @@ func TestDeriveSSHURL_AlreadySSH(t *testing.T) {
 		t.Errorf("SSH URL should be unchanged, got: %s", result)
 	}
 }
+
+// --- Auth merge tests ---
+
+func TestResolve_GroupAuthOverridesResource(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "https://gitlab.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Token:  "group-token",
+				SSHKey: "~/.ssh/id_group",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+
+	r := repos[0]
+	if r.Token != "group-token" {
+		t.Errorf("expected group token 'group-token', got %s", r.Token)
+	}
+	if r.SSHKey != "~/.ssh/id_group" {
+		t.Errorf("expected group SSH key, got %s", r.SSHKey)
+	}
+}
+
+func TestResolve_ResourceFallback(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "https://gitlab.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				// No Token or SSHKey override
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	r := repos[0]
+	if r.Token != "resource-token" {
+		t.Errorf("expected resource token 'resource-token', got %s", r.Token)
+	}
+	if r.SSHKey != "~/.ssh/id_resource" {
+		t.Errorf("expected resource SSH key, got %s", r.SSHKey)
+	}
+}
+
+func TestResolve_StandaloneRepoAuthOverridesResource(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gh": {Provider: "github", URL: "https://github.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
+		},
+		Repos: []config.Repo{
+			{
+				Name:      "dotfiles",
+				Resource:  "gh",
+				URL:       "https://github.com/me/dotfiles.git",
+				LocalPath: "./dotfiles",
+				Token:     "repo-token",
+				SSHKey:    "~/.ssh/id_repo",
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	r := repos[0]
+	if r.Token != "repo-token" {
+		t.Errorf("expected repo token 'repo-token', got %s", r.Token)
+	}
+	if r.SSHKey != "~/.ssh/id_repo" {
+		t.Errorf("expected repo SSH key, got %s", r.SSHKey)
+	}
+}
+
+func TestResolve_StandaloneRepoFallsBackToResource(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gh": {Provider: "github", URL: "https://github.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
+		},
+		Repos: []config.Repo{
+			{
+				Name:      "dotfiles",
+				Resource:  "gh",
+				URL:       "https://github.com/me/dotfiles.git",
+				LocalPath: "./dotfiles",
+				// No Token or SSHKey override
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	r := repos[0]
+	if r.Token != "resource-token" {
+		t.Errorf("expected resource token, got %s", r.Token)
+	}
+	if r.SSHKey != "~/.ssh/id_resource" {
+		t.Errorf("expected resource SSH key, got %s", r.SSHKey)
+	}
+}
+
+func TestResolve_GroupPartialOverride(t *testing.T) {
+	// Group overrides only SSH key, token falls back to resource
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "https://gitlab.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				SSHKey: "~/.ssh/id_group", // only SSH key override
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	r := repos[0]
+	if r.Token != "resource-token" {
+		t.Errorf("expected resource token fallback, got %s", r.Token)
+	}
+	if r.SSHKey != "~/.ssh/id_group" {
+		t.Errorf("expected group SSH key override, got %s", r.SSHKey)
+	}
+}

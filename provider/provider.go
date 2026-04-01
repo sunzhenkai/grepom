@@ -14,6 +14,8 @@ type Repo struct {
 	Provider  string // "gitlab", "github", or "explicit"
 	Resource  string // resource name this repo came from
 	GroupName string // group name this repo belongs to (empty for standalone repos)
+	Token     string // resolved token for clone (group/repo override or resource fallback)
+	SSHKey    string // SSH key path for clone (group/repo override or resource fallback)
 }
 
 // GroupQuery specifies a remote group to discover repos from.

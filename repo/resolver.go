@@ -34,6 +34,18 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 			continue
 		}
 
+		// Determine token: group override > resource default
+		token := g.Token
+		if token == "" {
+			token = res.Token
+		}
+
+		// Determine SSHKey: group override > resource default
+		sshKey := g.SSHKey
+		if sshKey == "" {
+			sshKey = res.SSHKey
+		}
+
 		for _, gr := range g.Repos {
 			localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
 			allRepos = append(allRepos, provider.Repo{
@@ -44,6 +56,8 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 				Provider:  res.Provider,
 				Resource:  g.Resource,
 				GroupName: g.Name,
+				Token:     token,
+				SSHKey:    sshKey,
 			})
 		}
 	}
@@ -54,6 +68,18 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 			continue
 		}
 
+		// Determine token: repo override > resource default
+		token := repo.Token
+		if token == "" {
+			token = res.Token
+		}
+
+		// Determine SSHKey: repo override > resource default
+		sshKey := repo.SSHKey
+		if sshKey == "" {
+			sshKey = res.SSHKey
+		}
+
 		localPath := config.ResolveRepoPath(r.cfg.Base, repo.LocalPath)
 		allRepos = append(allRepos, provider.Repo{
 			Name:     repo.Name,
@@ -62,6 +88,8 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 			Path:     localPath,
 			Provider: res.Provider,
 			Resource: repo.Resource,
+			Token:    token,
+			SSHKey:   sshKey,
 		})
 	}
 
@@ -106,12 +134,7 @@ func FullPath(base string, r provider.Repo) string {
 // deriveSSHURL converts an HTTPS clone URL to SSH format based on provider.
 func deriveSSHURL(cloneURL, prov string) string {
 	switch prov {
-	case "gitlab":
-		if strings.HasPrefix(cloneURL, "https://") {
-			return "git@" + strings.Replace(strings.TrimPrefix(cloneURL, "https://"), "/", ":", 1)
-		}
-		return cloneURL
-	case "github":
+	case "gitlab", "github":
 		if strings.HasPrefix(cloneURL, "https://") {
 			return "git@" + strings.Replace(strings.TrimPrefix(cloneURL, "https://"), "/", ":", 1)
 		}

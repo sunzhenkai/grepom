@@ -17,18 +17,21 @@ var envVarPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)}$`)
 
 // Config represents the top-level configuration file structure.
 type Config struct {
-	Base      string              `yaml:"base"`
-	Resources map[string]Resource `yaml:"resources"`
-	Groups    []Group             `yaml:"groups"`
-	Repos     []Repo              `yaml:"repos"`
-	rawTokens map[string]string   // resource name → original token string (with ${...} placeholders)
+	Base           string              `yaml:"base"`
+	Resources      map[string]Resource `yaml:"resources"`
+	Groups         []Group             `yaml:"groups"`
+	Repos          []Repo              `yaml:"repos"`
+	rawTokens      map[string]string   // resource name → original token string (with ${...} placeholders)
+	rawGroupTokens map[int]string      // group index → original group token string
+	rawRepoTokens  map[int]string      // repo index → original repo token string
 }
 
 // Resource defines authentication and connection information for a remote provider.
 type Resource struct {
 	Provider string `yaml:"provider"`
 	URL      string `yaml:"url"`
-	Token    string `yaml:"token"` // resolved at runtime; raw placeholder stored in Config.rawTokens
+	Token    string `yaml:"token"`             // resolved at runtime; raw placeholder stored in Config.rawTokens
+	SSHKey   string `yaml:"ssh_key,omitempty"` // optional SSH key path for clone authentication
 }
 
 // Group defines a remote group (GitLab group or GitHub org) whose repos are managed together.
@@ -38,6 +41,8 @@ type Group struct {
 	Path      string      `yaml:"path"`
 	LocalPath string      `yaml:"local_path,omitempty"`
 	Recursive bool        `yaml:"recursive,omitempty"`
+	SSHKey    string      `yaml:"ssh_key,omitempty"` // optional, overrides resource SSH key for clone
+	Token     string      `yaml:"token,omitempty"`   // optional, overrides resource token for clone (supports ${ENV_VAR})
 	Repos     []GroupRepo `yaml:"repos,omitempty"`
 }
 
@@ -54,6 +59,8 @@ type Repo struct {
 	Resource  string `yaml:"resource"`
 	URL       string `yaml:"url"`
 	LocalPath string `yaml:"local_path,omitempty"` // defaults to ./<name> if empty
+	Token     string `yaml:"token,omitempty"`      // optional, overrides resource token for clone (supports ${ENV_VAR})
+	SSHKey    string `yaml:"ssh_key,omitempty"`    // optional, overrides resource SSH key for clone
 }
 
 // Load reads and parses a configuration file, resolves token placeholders,
@@ -92,6 +99,34 @@ func Load(path string) (*Config, error) {
 		}
 		res.Token = resolved
 		cfg.Resources[name] = res
+	}
+
+	// Resolve Group tokens (supports ${ENV_VAR} syntax)
+	cfg.rawGroupTokens = make(map[int]string)
+	for i, g := range cfg.Groups {
+		if g.Token != "" {
+			cfg.rawGroupTokens[i] = g.Token
+			resolved, err := resolveToken(g.Token)
+			if err != nil {
+				return nil, fmt.Errorf("config: group %q: %w", g.Name, err)
+			}
+			g.Token = resolved
+			cfg.Groups[i] = g
+		}
+	}
+
+	// Resolve Repo tokens (supports ${ENV_VAR} syntax)
+	cfg.rawRepoTokens = make(map[int]string)
+	for i, r := range cfg.Repos {
+		if r.Token != "" {
+			cfg.rawRepoTokens[i] = r.Token
+			resolved, err := resolveToken(r.Token)
+			if err != nil {
+				return nil, fmt.Errorf("config: repo %q: %w", r.Name, err)
+			}
+			r.Token = resolved
+			cfg.Repos[i] = r
+		}
 	}
 
 	// Expand tilde in base path
@@ -501,6 +536,26 @@ func writeConfig(path string, cfg *Config) error {
 		}
 	}
 
+	// Restore raw group tokens for storage
+	resolvedGroupTokens := make(map[int]string)
+	for i, g := range cfg.Groups {
+		if raw, ok := cfg.rawGroupTokens[i]; ok {
+			resolvedGroupTokens[i] = g.Token
+			g.Token = raw
+			cfg.Groups[i] = g
+		}
+	}
+
+	// Restore raw repo tokens for storage
+	resolvedRepoTokens := make(map[int]string)
+	for i, r := range cfg.Repos {
+		if raw, ok := cfg.rawRepoTokens[i]; ok {
+			resolvedRepoTokens[i] = r.Token
+			r.Token = raw
+			cfg.Repos[i] = r
+		}
+	}
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		// Restore resolved tokens even on error
@@ -508,6 +563,16 @@ func writeConfig(path string, cfg *Config) error {
 			res := cfg.Resources[name]
 			res.Token = t
 			cfg.Resources[name] = res
+		}
+		for i, t := range resolvedGroupTokens {
+			g := cfg.Groups[i]
+			g.Token = t
+			cfg.Groups[i] = g
+		}
+		for i, t := range resolvedRepoTokens {
+			r := cfg.Repos[i]
+			r.Token = t
+			cfg.Repos[i] = r
 		}
 		return fmt.Errorf("marshal config: %w", err)
 	}
@@ -517,6 +582,16 @@ func writeConfig(path string, cfg *Config) error {
 		res := cfg.Resources[name]
 		res.Token = t
 		cfg.Resources[name] = res
+	}
+	for i, t := range resolvedGroupTokens {
+		g := cfg.Groups[i]
+		g.Token = t
+		cfg.Groups[i] = g
+	}
+	for i, t := range resolvedRepoTokens {
+		r := cfg.Repos[i]
+		r.Token = t
+		cfg.Repos[i] = r
 	}
 
 	// Restore base path
