@@ -16,6 +16,10 @@ type Repo struct {
 	GroupName string // group name this repo belongs to (empty for standalone repos)
 	Token     string // resolved token for clone (group/repo override or resource fallback)
 	SSHKey    string // SSH key path for clone (group/repo override or resource fallback)
+
+	// Source tracking for 6-level auth priority chain
+	HasGroupToken  bool // true if token was set at group/repo level (override)
+	HasGroupSSHKey bool // true if ssh_key was set at group/repo level (override)
 }
 
 // GroupQuery specifies a remote group to discover repos from.

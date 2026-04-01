@@ -108,6 +108,19 @@ var addGroupCmd = &cobra.Command{
 			path = configFile
 		}
 
+		// Pre-add validation: check resource exists and name uniqueness
+		cfg, err := loadExistingConfig(path)
+		if err == nil {
+			if _, ok := cfg.Resources[addGroupResource]; !ok {
+				return fmt.Errorf("resource %q not found", addGroupResource)
+			}
+			for _, g := range cfg.Groups {
+				if g.Name == addGroupName {
+					return fmt.Errorf("group %q already exists", addGroupName)
+				}
+			}
+		}
+
 		group := config.Group{
 			Name:      addGroupName,
 			Resource:  addGroupResource,
@@ -161,9 +174,6 @@ var addRepoCmd = &cobra.Command{
 		if addRepoURL == "" {
 			return fmt.Errorf("--url is required")
 		}
-		if addRepoResource == "" {
-			return fmt.Errorf("--resource is required")
-		}
 
 		path, err := resolvedConfigPath()
 		if err != nil {
@@ -171,7 +181,21 @@ var addRepoCmd = &cobra.Command{
 		}
 
 		if addRepoGroup != "" {
-			// Add to group
+			// Add to group: validate group exists
+			cfg, err := loadExistingConfig(path)
+			if err == nil {
+				found := false
+				for _, g := range cfg.Groups {
+					if g.Name == addRepoGroup {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return fmt.Errorf("group %q not found", addRepoGroup)
+				}
+			}
+
 			repo := config.GroupRepo{
 				Name: addRepoName,
 				URL:  addRepoURL,
@@ -186,12 +210,30 @@ var addRepoCmd = &cobra.Command{
 			}
 			fmt.Printf("Added repo %s to group %s in %s\n", addRepoName, addRepoGroup, path)
 		} else {
-			// Standalone repo
+			// Standalone repo: validate resource and name uniqueness
+			if addRepoResource == "" {
+				return fmt.Errorf("--resource is required")
+			}
+
+			cfg, err := loadExistingConfig(path)
+			if err == nil {
+				if _, ok := cfg.Resources[addRepoResource]; !ok {
+					return fmt.Errorf("resource %q not found", addRepoResource)
+				}
+				for _, r := range cfg.Repos {
+					if r.Name == addRepoName {
+						return fmt.Errorf("repo %q already exists", addRepoName)
+					}
+				}
+			}
+
 			repo := config.Repo{
 				Name:      addRepoName,
 				Resource:  addRepoResource,
 				URL:       addRepoURL,
 				LocalPath: addRepoLocalPath,
+				SSHKey:    addRepoSSHKey,
+				Token:     addRepoToken,
 			}
 
 			if err := config.AddRepo(path, repo); err != nil {
@@ -212,6 +254,17 @@ func init() {
 	addRepoCmd.Flags().StringVar(&addRepoGroup, "group", "", "group name to add this repo to (omit for standalone)")
 	addRepoCmd.Flags().StringVar(&addRepoPath, "path", "", "remote path for group repo (e.g. my-org/frontend/repo-name)")
 	addRepoCmd.Flags().StringVar(&addRepoSSHKey, "ssh-key", "", "SSH private key path for clone (overrides resource)")
-	addRepoCmd.Flags().StringVar(&addRepoToken, "token", "", "token for clone (overrides resource, supports ${ENV_VAR}) syntax)")
+	addRepoCmd.Flags().StringVar(&addRepoToken, "token", "", "token for clone (overrides resource, supports ${ENV_VAR})")
 	addCmd.AddCommand(addRepoCmd)
+}
+
+// loadExistingConfig loads the config file for validation purposes.
+// Returns nil (no error) if file doesn't exist, allowing add commands to proceed.
+// This avoids triggering env var resolution errors during pre-add validation.
+func loadExistingConfig(path string) (*config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }

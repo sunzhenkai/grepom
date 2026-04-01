@@ -27,67 +27,95 @@ func IsCloned(path string) bool {
 
 // CloneOptions holds authentication options for cloning.
 type CloneOptions struct {
-	Token    string // token for HTTPS authentication
+	Token    string // token for HTTPS authentication (merged value)
 	Provider string // "github" or "gitlab", determines token URL format
-	SSHKey   string // path to SSH private key file
+	SSHKey   string // path to SSH private key file (merged value)
+
+	// Source tracking for 6-level auth priority chain
+	HasGroupToken  bool // true if token was set at group/repo level
+	HasGroupSSHKey bool // true if ssh_key was set at group/repo level
 }
 
-// Clone clones a repository, creating parent directories as needed.
-// It tries authentication methods in priority order:
-//  1. token auth (HTTPS + embedded token)
-//  2. SSH with specified key
-//  3. Default SSH (derived URL)
-//  4. Bare HTTP
-func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return fmt.Errorf("create directory: %w", err)
-	}
+// authStrategy represents a single clone authentication method to try.
+type authStrategy struct {
+	label  string
+	url    string
+	sshKey string // non-empty means use GIT_SSH_COMMAND
+}
 
-	// Build ordered list of auth strategies to try
-	type strategy struct {
-		label  string
-		url    string
-		sshKey string // non-empty means use GIT_SSH_COMMAND
-	}
+// buildAuthStrategies builds an ordered list of clone strategies based on the
+// SSH-priority chain: group/repo SSH → group/repo token → resource SSH →
+// resource token → default SSH → bare HTTP.
+func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrategy {
+	var strategies []authStrategy
 
-	var strategies []strategy
-
-	// 1. Token auth
-	if opts.Token != "" && httpURL != "" {
-		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
-		strategies = append(strategies, strategy{
-			label:  fmt.Sprintf("token 认证 (%s)", authLevel(opts)),
-			url:    tokenURL,
-			sshKey: "",
-		})
-	}
-
-	// 2. SSH with specified key
-	if opts.SSHKey != "" && sshURL != "" {
-		strategies = append(strategies, strategy{
-			label:  fmt.Sprintf("SSH key 认证 (%s)", authLevel(opts)),
+	// 1. group/repo SSH key (highest priority)
+	if opts.HasGroupSSHKey && opts.SSHKey != "" && sshURL != "" {
+		strategies = append(strategies, authStrategy{
+			label:  "SSH key 认证 (group/repo)",
 			url:    sshURL,
 			sshKey: opts.SSHKey,
 		})
 	}
 
-	// 3. Default SSH (derived URL)
+	// 2. group/repo token
+	if opts.HasGroupToken && opts.Token != "" && httpURL != "" {
+		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
+		strategies = append(strategies, authStrategy{
+			label:  "token 认证 (group/repo)",
+			url:    tokenURL,
+			sshKey: "",
+		})
+	}
+
+	// 3. resource SSH key
+	if !opts.HasGroupSSHKey && opts.SSHKey != "" && sshURL != "" {
+		strategies = append(strategies, authStrategy{
+			label:  "SSH key 认证 (resource)",
+			url:    sshURL,
+			sshKey: opts.SSHKey,
+		})
+	}
+
+	// 4. resource token
+	if !opts.HasGroupToken && opts.Token != "" && httpURL != "" {
+		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
+		strategies = append(strategies, authStrategy{
+			label:  "token 认证 (resource)",
+			url:    tokenURL,
+			sshKey: "",
+		})
+	}
+
+	// 5. Default SSH (derived URL)
 	if sshURL != "" {
-		strategies = append(strategies, strategy{
+		strategies = append(strategies, authStrategy{
 			label:  "SSH 认证 (默认)",
 			url:    sshURL,
 			sshKey: "",
 		})
 	}
 
-	// 4. Bare HTTP
+	// 6. Bare HTTP
 	if httpURL != "" {
-		strategies = append(strategies, strategy{
+		strategies = append(strategies, authStrategy{
 			label:  "HTTP 克隆",
 			url:    httpURL,
 			sshKey: "",
 		})
 	}
+
+	return strategies
+}
+
+// Clone clones a repository, creating parent directories as needed.
+// It tries authentication methods in SSH-priority order using the 6-level chain.
+func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+
+	strategies := buildAuthStrategies(sshURL, httpURL, opts)
 
 	if len(strategies) == 0 {
 		return fmt.Errorf("no clone URL available")
@@ -113,20 +141,6 @@ func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 	}
 
 	return fmt.Errorf("所有认证方式均失败")
-}
-
-// authLevel returns a human-readable label for the auth source
-func authLevel(opts CloneOptions) string {
-	if opts.Token != "" && opts.SSHKey != "" {
-		return "group/repo"
-	}
-	if opts.Token != "" {
-		return "group/repo"
-	}
-	if opts.SSHKey != "" {
-		return "group/repo"
-	}
-	return "resource"
 }
 
 // tryClone attempts a single git clone with the given URL and optional SSH key.

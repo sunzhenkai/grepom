@@ -57,9 +57,11 @@ var cloneCmd = &cobra.Command{
 
 			fmt.Printf("cloning %s...\n", r.Path)
 			opts := gitpkg.CloneOptions{
-				Token:    r.Token,
-				Provider: r.Provider,
-				SSHKey:   r.SSHKey,
+				Token:          r.Token,
+				Provider:       r.Provider,
+				SSHKey:         r.SSHKey,
+				HasGroupToken:  r.HasGroupToken,
+				HasGroupSSHKey: r.HasGroupSSHKey,
 			}
 			if err := gitpkg.Clone(fullPath, r.SSHURL, r.CloneURL, opts); err != nil {
 				fmt.Fprintf(os.Stderr, "error cloning %s: %v\n", r.Path, err)

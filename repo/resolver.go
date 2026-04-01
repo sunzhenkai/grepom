@@ -36,12 +36,14 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 
 		// Determine token: group override > resource default
 		token := g.Token
+		hasGroupToken := g.Token != ""
 		if token == "" {
 			token = res.Token
 		}
 
 		// Determine SSHKey: group override > resource default
 		sshKey := g.SSHKey
+		hasGroupSSHKey := g.SSHKey != ""
 		if sshKey == "" {
 			sshKey = res.SSHKey
 		}
@@ -49,15 +51,17 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 		for _, gr := range g.Repos {
 			localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
 			allRepos = append(allRepos, provider.Repo{
-				Name:      gr.Name,
-				CloneURL:  gr.URL,
-				SSHURL:    deriveSSHURL(gr.URL, res.Provider),
-				Path:      localPath,
-				Provider:  res.Provider,
-				Resource:  g.Resource,
-				GroupName: g.Name,
-				Token:     token,
-				SSHKey:    sshKey,
+				Name:           gr.Name,
+				CloneURL:       gr.URL,
+				SSHURL:         deriveSSHURL(gr.URL, res.Provider),
+				Path:           localPath,
+				Provider:       res.Provider,
+				Resource:       g.Resource,
+				GroupName:      g.Name,
+				Token:          token,
+				SSHKey:         sshKey,
+				HasGroupToken:  hasGroupToken,
+				HasGroupSSHKey: hasGroupSSHKey,
 			})
 		}
 	}
@@ -70,26 +74,30 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 
 		// Determine token: repo override > resource default
 		token := repo.Token
+		hasGroupToken := repo.Token != ""
 		if token == "" {
 			token = res.Token
 		}
 
 		// Determine SSHKey: repo override > resource default
 		sshKey := repo.SSHKey
+		hasGroupSSHKey := repo.SSHKey != ""
 		if sshKey == "" {
 			sshKey = res.SSHKey
 		}
 
 		localPath := config.ResolveRepoPath(r.cfg.Base, repo.LocalPath)
 		allRepos = append(allRepos, provider.Repo{
-			Name:     repo.Name,
-			CloneURL: repo.URL,
-			SSHURL:   deriveSSHURL(repo.URL, res.Provider),
-			Path:     localPath,
-			Provider: res.Provider,
-			Resource: repo.Resource,
-			Token:    token,
-			SSHKey:   sshKey,
+			Name:           repo.Name,
+			CloneURL:       repo.URL,
+			SSHURL:         deriveSSHURL(repo.URL, res.Provider),
+			Path:           localPath,
+			Provider:       res.Provider,
+			Resource:       repo.Resource,
+			Token:          token,
+			SSHKey:         sshKey,
+			HasGroupToken:  hasGroupToken,
+			HasGroupSSHKey: hasGroupSSHKey,
 		})
 	}
 
@@ -111,6 +119,28 @@ func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 
 	for _, r := range repos {
 		if filter.Name != "" && r.Name != filter.Name {
+			continue
+		}
+		if filter.Group != "" && r.GroupName != filter.Group {
+			continue
+		}
+		if filter.Resource != "" && r.Resource != filter.Resource {
+			continue
+		}
+		result = append(result, r)
+	}
+
+	return result
+}
+
+// ApplySearchFilter filters repos by case-insensitive substring match on name,
+// then applies exact group/resource filters.
+func ApplySearchFilter(repos []provider.Repo, keyword string, filter Filter) []provider.Repo {
+	keyword = strings.ToLower(keyword)
+	var result []provider.Repo
+
+	for _, r := range repos {
+		if keyword != "" && !strings.Contains(strings.ToLower(r.Name), keyword) {
 			continue
 		}
 		if filter.Group != "" && r.GroupName != filter.Group {

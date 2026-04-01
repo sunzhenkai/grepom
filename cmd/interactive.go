@@ -783,9 +783,11 @@ func interactiveClone() {
 
 		fmt.Printf("克隆 %s...\n", r.Path)
 		opts := gitpkg.CloneOptions{
-			Token:    r.Token,
-			Provider: r.Provider,
-			SSHKey:   r.SSHKey,
+			Token:          r.Token,
+			Provider:       r.Provider,
+			SSHKey:         r.SSHKey,
+			HasGroupToken:  r.HasGroupToken,
+			HasGroupSSHKey: r.HasGroupSSHKey,
 		}
 		if err := gitpkg.Clone(fullPath, r.SSHURL, r.CloneURL, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "克隆 %s 失败: %v\n", r.Path, err)

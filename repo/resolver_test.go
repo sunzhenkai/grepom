@@ -389,3 +389,75 @@ func TestResolve_GroupPartialOverride(t *testing.T) {
 		t.Errorf("expected group SSH key override, got %s", r.SSHKey)
 	}
 }
+
+// --- ApplySearchFilter tests ---
+
+func TestApplySearchFilter_CaseInsensitive(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "Web-App", GroupName: "frontend"},
+		{Name: "API-Server", GroupName: "backend"},
+		{Name: "web-utils", GroupName: "shared"},
+	}
+
+	results := ApplySearchFilter(repos, "web", Filter{})
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+}
+
+func TestApplySearchFilter_NoMatch(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "frontend", GroupName: "fe"},
+		{Name: "backend", GroupName: "be"},
+	}
+
+	results := ApplySearchFilter(repos, "xyz", Filter{})
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestApplySearchFilter_EmptyKeyword(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "app"},
+		{Name: "api"},
+	}
+
+	results := ApplySearchFilter(repos, "", Filter{})
+	if len(results) != 2 {
+		t.Fatalf("empty keyword should return all repos, got %d", len(results))
+	}
+}
+
+func TestApplySearchFilter_WithGroupFilter(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "web-app", GroupName: "frontend"},
+		{Name: "web-api", GroupName: "backend"},
+		{Name: "web-utils", GroupName: "frontend"},
+	}
+
+	results := ApplySearchFilter(repos, "web", Filter{Group: "frontend"})
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results in frontend, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.GroupName != "frontend" {
+			t.Errorf("expected group 'frontend', got %s", r.GroupName)
+		}
+	}
+}
+
+func TestApplySearchFilter_WithResourceFilter(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "web-app", Resource: "gitlab"},
+		{Name: "web-api", Resource: "github"},
+	}
+
+	results := ApplySearchFilter(repos, "web", Filter{Resource: "github"})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result from github, got %d", len(results))
+	}
+	if results[0].Name != "web-api" {
+		t.Errorf("expected 'web-api', got %s", results[0].Name)
+	}
+}
