@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 
@@ -9,12 +8,14 @@ import (
 	"github.com/wii/grepom/provider"
 )
 
+// Filter defines criteria for filtering repos.
 type Filter struct {
 	Name     string
-	Group    string
-	Provider string
+	Group    string // group name
+	Resource string // resource name
 }
 
+// Resolver builds a list of provider.Repo from the config.
 type Resolver struct {
 	cfg *config.Config
 }
@@ -23,57 +24,60 @@ func NewResolver(cfg *config.Config) *Resolver {
 	return &Resolver{cfg: cfg}
 }
 
-// Resolve fetches repos from all API sources and merges with explicit repo entries.
-func (r *Resolver) Resolve(ctx context.Context) ([]provider.Repo, error) {
+// Resolve builds the full repo list from all groups and standalone repos.
+func (r *Resolver) Resolve() ([]provider.Repo, error) {
 	var allRepos []provider.Repo
 
-	// Fetch from API sources
-	for _, source := range r.cfg.Sources {
-		config.Verbose("fetching repos from %s source at %s", source.Provider, source.URL)
-		p, err := provider.Get(source.Provider)
-		if err != nil {
-			return nil, err
+	for _, g := range r.cfg.Groups {
+		res, ok := r.cfg.Resources[g.Resource]
+		if !ok {
+			continue
 		}
 
-		repos, err := p.ListRepos(ctx, source)
-		if err != nil {
-			return nil, err
+		for _, gr := range g.Repos {
+			localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
+			allRepos = append(allRepos, provider.Repo{
+				Name:      gr.Name,
+				CloneURL:  gr.URL,
+				SSHURL:    deriveSSHURL(gr.URL, res.Provider),
+				Path:      localPath,
+				Provider:  res.Provider,
+				Resource:  g.Resource,
+				GroupName: g.Name,
+			})
 		}
-
-		config.Verbose("found %d repos from %s", len(repos), source.URL)
-		allRepos = append(allRepos, repos...)
 	}
 
-	// Add explicit repos
-	for _, entry := range r.cfg.Repos {
-		path := entry.Path
-		if strings.HasPrefix(path, "./") {
-			path = path[2:]
+	for _, repo := range r.cfg.Repos {
+		res, ok := r.cfg.Resources[repo.Resource]
+		if !ok {
+			continue
 		}
+
+		localPath := config.ResolveRepoPath(r.cfg.Base, repo.LocalPath)
 		allRepos = append(allRepos, provider.Repo{
-			Name:     entry.Name,
-			CloneURL: entry.URL,
-			SSHURL:   strings.Replace(entry.URL, "https://", "git@", 1),
-			Path:     path,
-			Provider: "explicit",
+			Name:     repo.Name,
+			CloneURL: repo.URL,
+			SSHURL:   deriveSSHURL(repo.URL, res.Provider),
+			Path:     localPath,
+			Provider: res.Provider,
+			Resource: repo.Resource,
 		})
 	}
 
-	config.Verbose("total %d repos resolved", len(allRepos))
 	return allRepos, nil
 }
 
-// ResolveAndFilter fetches repos and applies the given filter.
-func (r *Resolver) ResolveAndFilter(ctx context.Context, filter Filter) ([]provider.Repo, error) {
-	allRepos, err := r.Resolve(ctx)
+// ResolveAndFilter builds the repo list and applies the given filter.
+func (r *Resolver) ResolveAndFilter(filter Filter) ([]provider.Repo, error) {
+	allRepos, err := r.Resolve()
 	if err != nil {
 		return nil, err
 	}
-
 	return ApplyFilter(allRepos, filter), nil
 }
 
-// ApplyFilter filters a repo list by name, group, or provider.
+// ApplyFilter filters a repo list by name, group, or resource.
 func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 	var result []provider.Repo
 
@@ -81,10 +85,10 @@ func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 		if filter.Name != "" && r.Name != filter.Name {
 			continue
 		}
-		if filter.Group != "" && !strings.HasPrefix(r.Path, filter.Group) {
+		if filter.Group != "" && r.GroupName != filter.Group {
 			continue
 		}
-		if filter.Provider != "" && r.Provider != filter.Provider {
+		if filter.Resource != "" && r.Resource != filter.Resource {
 			continue
 		}
 		result = append(result, r)
@@ -93,7 +97,26 @@ func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 	return result
 }
 
-// FullPath joins the base directory with a repo's relative path.
-func FullPath(base string, repo provider.Repo) string {
-	return filepath.Join(base, repo.Path)
+// FullPath returns the absolute local path for a repo.
+// The repo's Path field already contains the full derived path.
+func FullPath(base string, r provider.Repo) string {
+	return filepath.Clean(r.Path)
+}
+
+// deriveSSHURL converts an HTTPS clone URL to SSH format based on provider.
+func deriveSSHURL(cloneURL, prov string) string {
+	switch prov {
+	case "gitlab":
+		if strings.HasPrefix(cloneURL, "https://") {
+			return "git@" + strings.Replace(strings.TrimPrefix(cloneURL, "https://"), "/", ":", 1)
+		}
+		return cloneURL
+	case "github":
+		if strings.HasPrefix(cloneURL, "https://") {
+			return "git@" + strings.Replace(strings.TrimPrefix(cloneURL, "https://"), "/", ":", 1)
+		}
+		return cloneURL
+	default:
+		return cloneURL
+	}
 }

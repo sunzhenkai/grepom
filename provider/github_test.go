@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/wii/grepom/config"
 )
 
 func TestGitHubProvider_ListRepos(t *testing.T) {
@@ -28,14 +26,13 @@ func TestGitHubProvider_ListRepos(t *testing.T) {
 	defer ts.Close()
 
 	p := &GitHubProvider{}
-	source := config.Source{
-		Provider: "github",
-		URL:      ts.URL,
-		Token:    "test-token",
-		Orgs:     []config.OrgSource{{Name: "my-org"}},
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+		Orgs:      []string{"my-org"},
 	}
 
-	result, err := p.ListRepos(context.Background(), source)
+	result, err := p.ListRepos(context.Background(), params)
 	if err != nil {
 		t.Fatalf("ListRepos failed: %v", err)
 	}
@@ -57,14 +54,13 @@ func TestGitHubProvider_Unauthorized(t *testing.T) {
 	defer ts.Close()
 
 	p := &GitHubProvider{}
-	source := config.Source{
-		Provider: "github",
-		URL:      ts.URL,
-		Token:    "bad-token",
-		Orgs:     []config.OrgSource{{Name: "my-org"}},
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "bad-token",
+		Orgs:      []string{"my-org"},
 	}
 
-	_, err := p.ListRepos(context.Background(), source)
+	_, err := p.ListRepos(context.Background(), params)
 	if err == nil {
 		t.Fatal("expected auth error")
 	}
@@ -80,14 +76,13 @@ func TestGitHubProvider_RateLimit(t *testing.T) {
 	defer ts.Close()
 
 	p := &GitHubProvider{}
-	source := config.Source{
-		Provider: "github",
-		URL:      ts.URL,
-		Token:    "test-token",
-		Orgs:     []config.OrgSource{{Name: "my-org"}},
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+		Orgs:      []string{"my-org"},
 	}
 
-	_, err := p.ListRepos(context.Background(), source)
+	_, err := p.ListRepos(context.Background(), params)
 	if err == nil {
 		t.Fatal("expected rate limit error")
 	}

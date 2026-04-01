@@ -18,10 +18,10 @@ var rootCmd = &cobra.Command{
 	Short: "Git Repository Orchestrator & Manager",
 	Long: `A CLI tool for managing multiple git repositories across GitLab groups and GitHub organizations.
 
-Use YAML configuration files to define API sources (GitLab groups, GitHub orgs) and
-grepom will discover and manage repositories automatically.`,
+Use YAML configuration files to define resources (authentication), groups (remote paths),
+and standalone repos. Grepom discovers and manages repositories automatically.`,
 	Example: `  grepom -c work.yml list              # List repos from a specific config
-  grepom clone --group my-org/frontend # Clone all repos in a group
+  grepom clone --group frontend        # Clone all repos in a group
   grepom status                        # Check status of all cloned repos
   grepom pull web-app                  # Pull updates for a single repo`,
 }

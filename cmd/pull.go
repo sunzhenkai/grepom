@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -10,12 +9,18 @@ import (
 	"github.com/wii/grepom/repo"
 )
 
+var (
+	pullGroup    string
+	pullResource string
+)
+
 var pullCmd = &cobra.Command{
 	Use:   "pull [name]",
 	Short: "Pull updates for repositories",
 	Long:  "Run git pull on cloned repositories. Skips repositories that have not been cloned yet.",
 	Example: `  grepom pull           # Pull all cloned repos
-  grepom pull web-app    # Pull a specific repo`,
+  grepom pull web-app    # Pull a specific repo
+  grepom pull --group frontend  # Pull repos in a group`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
@@ -23,13 +28,16 @@ var pullCmd = &cobra.Command{
 			return err
 		}
 
-		filter := repo.Filter{}
+		filter := repo.Filter{
+			Group:    pullGroup,
+			Resource: pullResource,
+		}
 		if len(args) > 0 {
 			filter.Name = args[0]
 		}
 
 		resolver := repo.NewResolver(cfg)
-		repos, err := resolver.ResolveAndFilter(context.Background(), filter)
+		repos, err := resolver.ResolveAndFilter(filter)
 		if err != nil {
 			return err
 		}
@@ -59,5 +67,7 @@ var pullCmd = &cobra.Command{
 }
 
 func init() {
+	pullCmd.Flags().StringVar(&pullGroup, "group", "", "filter by group name")
+	pullCmd.Flags().StringVar(&pullResource, "resource", "", "filter by resource name")
 	rootCmd.AddCommand(pullCmd)
 }

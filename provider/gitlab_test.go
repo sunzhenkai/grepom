@@ -7,11 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/wii/grepom/config"
 )
 
-func TestGitLabProvider_ListRepos(t *testing.T) {
+func TestGitLabProvider_ListRepos_Recursive(t *testing.T) {
 	group := gitlabGroup{ID: 123, Path: "frontend", FullPath: "my-org/frontend"}
 	projects := []gitlabProject{
 		{Name: "web-app", PathWithNamespace: "my-org/frontend/web-app", HTTPURLToRepo: "https://gitlab.com/my-org/frontend/web-app.git", SSHURLToRepo: "git@gitlab.com:my-org/frontend/web-app.git"},
@@ -45,14 +43,13 @@ func TestGitLabProvider_ListRepos(t *testing.T) {
 	defer ts.Close()
 
 	p := &GitLabProvider{}
-	source := config.Source{
-		Provider: "gitlab",
-		URL:      ts.URL,
-		Token:    "test-token",
-		Groups:   []config.GroupSource{{Path: "my-org/frontend", Recursive: true}},
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+		Groups:    []GroupQuery{{Path: "my-org/frontend", Recursive: true}},
 	}
 
-	repos, err := p.ListRepos(context.Background(), source)
+	repos, err := p.ListRepos(context.Background(), params)
 	if err != nil {
 		t.Fatalf("ListRepos failed: %v", err)
 	}
@@ -103,14 +100,13 @@ func TestGitLabProvider_NonRecursive(t *testing.T) {
 	defer ts.Close()
 
 	p := &GitLabProvider{}
-	source := config.Source{
-		Provider: "gitlab",
-		URL:      ts.URL,
-		Token:    "test-token",
-		Groups:   []config.GroupSource{{Path: "my-org/frontend", Recursive: false}},
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+		Groups:    []GroupQuery{{Path: "my-org/frontend", Recursive: false}},
 	}
 
-	repos, err := p.ListRepos(context.Background(), source)
+	repos, err := p.ListRepos(context.Background(), params)
 	if err != nil {
 		t.Fatalf("ListRepos failed: %v", err)
 	}
@@ -128,14 +124,13 @@ func TestGitLabProvider_Unauthorized(t *testing.T) {
 	defer ts.Close()
 
 	p := &GitLabProvider{}
-	source := config.Source{
-		Provider: "gitlab",
-		URL:      ts.URL,
-		Token:    "bad-token",
-		Groups:   []config.GroupSource{{Path: "my-org"}},
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "bad-token",
+		Groups:    []GroupQuery{{Path: "my-org"}},
 	}
 
-	_, err := p.ListRepos(context.Background(), source)
+	_, err := p.ListRepos(context.Background(), params)
 	if err == nil {
 		t.Fatal("expected auth error")
 	}

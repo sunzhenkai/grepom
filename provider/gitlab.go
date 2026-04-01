@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/wii/grepom/config"
 )
 
 func init() {
@@ -30,9 +28,9 @@ type gitlabProject struct {
 }
 
 type gitlabGroup struct {
-	ID            int    `json:"id"`
-	Path          string `json:"path"`
-	FullPath      string `json:"full_path"`
+	ID       int    `json:"id"`
+	Path     string `json:"path"`
+	FullPath string `json:"full_path"`
 }
 
 func (g *GitLabProvider) getClient() *http.Client {
@@ -42,11 +40,11 @@ func (g *GitLabProvider) getClient() *http.Client {
 	return g.client
 }
 
-func (g *GitLabProvider) ListRepos(ctx context.Context, source config.Source) ([]Repo, error) {
+func (g *GitLabProvider) ListRepos(ctx context.Context, params ListReposParams) ([]Repo, error) {
 	var allRepos []Repo
 
-	for _, group := range source.Groups {
-		repos, err := g.listGroupRepos(ctx, source, group.Path, group.Recursive)
+	for _, group := range params.Groups {
+		repos, err := g.listGroupRepos(ctx, params, group.Path, group.Recursive)
 		if err != nil {
 			return nil, fmt.Errorf("gitlab: group %s: %w", group.Path, err)
 		}
@@ -56,24 +54,20 @@ func (g *GitLabProvider) ListRepos(ctx context.Context, source config.Source) ([
 	return allRepos, nil
 }
 
-func (g *GitLabProvider) listGroupRepos(ctx context.Context, source config.Source, groupPath string, recursive bool) ([]Repo, error) {
-	// Resolve group ID from path
-	group, err := g.getGroupByPath(ctx, source, groupPath)
+func (g *GitLabProvider) listGroupRepos(ctx context.Context, params ListReposParams, groupPath string, recursive bool) ([]Repo, error) {
+	group, err := g.getGroupByPath(ctx, params, groupPath)
 	if err != nil {
 		return nil, err
 	}
 
 	var allRepos []Repo
-
-	// BFS queue: start with the root group
 	queue := []gitlabGroup{*group}
 
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
 
-		// Get projects in this group
-		projects, err := g.getGroupProjects(ctx, source, current.ID)
+		projects, err := g.getGroupProjects(ctx, params, current.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -88,9 +82,8 @@ func (g *GitLabProvider) listGroupRepos(ctx context.Context, source config.Sourc
 			})
 		}
 
-		// If recursive, get subgroups
 		if recursive {
-			subgroups, err := g.getSubgroups(ctx, source, current.ID)
+			subgroups, err := g.getSubgroups(ctx, params, current.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -101,26 +94,26 @@ func (g *GitLabProvider) listGroupRepos(ctx context.Context, source config.Sourc
 	return allRepos, nil
 }
 
-func (g *GitLabProvider) getGroupByPath(ctx context.Context, source config.Source, path string) (*gitlabGroup, error) {
+func (g *GitLabProvider) getGroupByPath(ctx context.Context, params ListReposParams, path string) (*gitlabGroup, error) {
 	encodedPath := strings.ReplaceAll(path, "/", "%2F")
-	url := fmt.Sprintf("%s/api/v4/groups/%s", source.URL, encodedPath)
+	url := fmt.Sprintf("%s/api/v4/groups/%s", params.ServerURL, encodedPath)
 
 	var group gitlabGroup
-	if err := g.get(ctx, source.Token, url, &group); err != nil {
+	if err := g.get(ctx, params.Token, url, &group); err != nil {
 		return nil, err
 	}
 	return &group, nil
 }
 
-func (g *GitLabProvider) getGroupProjects(ctx context.Context, source config.Source, groupID int) ([]gitlabProject, error) {
+func (g *GitLabProvider) getGroupProjects(ctx context.Context, params ListReposParams, groupID int) ([]gitlabProject, error) {
 	var allProjects []gitlabProject
 	page := 1
 
 	for {
-		url := fmt.Sprintf("%s/api/v4/groups/%d/projects?per_page=100&page=%d", source.URL, groupID, page)
+		url := fmt.Sprintf("%s/api/v4/groups/%d/projects?per_page=100&page=%d", params.ServerURL, groupID, page)
 
 		var projects []gitlabProject
-		nextPage, err := g.getWithPagination(ctx, source.Token, url, &projects)
+		nextPage, err := g.getWithPagination(ctx, params.Token, url, &projects)
 		if err != nil {
 			return nil, err
 		}
@@ -136,29 +129,11 @@ func (g *GitLabProvider) getGroupProjects(ctx context.Context, source config.Sou
 	return allProjects, nil
 }
 
-func (g *GitLabProvider) ListSubGroups(ctx context.Context, source config.Source, groupPath string) ([]string, error) {
-	group, err := g.getGroupByPath(ctx, source, groupPath)
-	if err != nil {
-		return nil, err
-	}
-
-	subgroups, err := g.getSubgroups(ctx, source, group.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	paths := make([]string, 0, len(subgroups))
-	for _, sg := range subgroups {
-		paths = append(paths, sg.FullPath)
-	}
-	return paths, nil
-}
-
-func (g *GitLabProvider) getSubgroups(ctx context.Context, source config.Source, groupID int) ([]gitlabGroup, error) {
-	url := fmt.Sprintf("%s/api/v4/groups/%d/subgroups?per_page=100", source.URL, groupID)
+func (g *GitLabProvider) getSubgroups(ctx context.Context, params ListReposParams, groupID int) ([]gitlabGroup, error) {
+	url := fmt.Sprintf("%s/api/v4/groups/%d/subgroups?per_page=100", params.ServerURL, groupID)
 
 	var subgroups []gitlabGroup
-	_, err := g.getWithPagination(ctx, source.Token, url, &subgroups)
+	_, err := g.getWithPagination(ctx, params.Token, url, &subgroups)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +155,7 @@ func (g *GitLabProvider) get(ctx context.Context, token, url string, v interface
 	}
 	defer resp.Body.Close()
 
-	if err := checkRateLimit(resp); err != nil {
+	if err := checkGitLabRateLimit(resp); err != nil {
 		return err
 	}
 
@@ -210,7 +185,7 @@ func (g *GitLabProvider) getWithPagination(ctx context.Context, token, url strin
 	}
 	defer resp.Body.Close()
 
-	if err := checkRateLimit(resp); err != nil {
+	if err := checkGitLabRateLimit(resp); err != nil {
 		return 0, err
 	}
 
@@ -226,7 +201,7 @@ func (g *GitLabProvider) getWithPagination(ctx context.Context, token, url strin
 	return parseNextPage(resp.Header.Get("Link"))
 }
 
-func checkRateLimit(resp *http.Response) error {
+func checkGitLabRateLimit(resp *http.Response) error {
 	if resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := resp.Header.Get("Retry-After")
 		if retryAfter != "" {

@@ -9,27 +9,27 @@ The system SHALL also provide the following subcommands:
 - `list`: list discovered repositories
 - `status`: show git status
 - `pull`: pull updates
-- `add`: add source or repository
-- `sync`: synchronize repository metadata and update configuration (does NOT clone or pull)
+- `add`: add resource, group, or repository
+- `sync`: synchronize repository metadata from groups (does NOT clone or pull)
 
 #### Scenario: Show help
 - **WHEN** user runs `grepom --help`
-- **THEN** the system displays available commands (including `sync`) and global flags
+- **THEN** the system displays available commands and global flags
 
 ### Requirement: clone command
-系统 SHALL 提供 `grepom clone` 命令，将仓库 clone 到本地文件系统 `<base>/<path>`，按需创建目录。
+系统 SHALL 提供 `grepom clone` 命令，将仓库 clone 到本地文件系统。Group 内 repo 的目标路径通过路径推导公式计算。独立 repo 使用其 local_path。
 
 #### Scenario: Clone all repos
 - **WHEN** 用户运行 `grepom clone`（无参数）
-- **THEN** 系统从所有 sources clone 所有仓库到各自 base 下的路径
+- **THEN** 系统从所有 groups 和独立 repos clone 所有仓库到各自推导的本地路径
 
-#### Scenario: Clone single repo
+#### Scenario: Clone single repo by name
 - **WHEN** 用户运行 `grepom clone web-app`
-- **THEN** 系统仅 clone 名为 `web-app` 的仓库
+- **THEN** 系统仅 clone 名为 `web-app` 的仓库（在所有 groups 和独立 repos 中搜索）
 
 #### Scenario: Clone by group
-- **WHEN** 用户运行 `grepom clone --group my-org/frontend`
-- **THEN** 系统仅 clone `my-org/frontend` 下的所有仓库
+- **WHEN** 用户运行 `grepom clone --group frontend`
+- **THEN** 系统仅 clone group `frontend` 下的所有仓库
 
 #### Scenario: Repo already exists
 - **WHEN** 目标目录已包含 git 仓库
@@ -47,41 +47,41 @@ The system SHALL provide a `grepom list` command that displays discovered reposi
 
 #### Scenario: List all repos
 - **WHEN** user runs `grepom list`
-- **THEN** the system displays all repos with name, path, provider, and clone status
+- **THEN** the system displays all repos from all groups and independent repos, with name, path, provider, and clone status
 
 #### Scenario: List single repo
 - **WHEN** user runs `grepom list web-app`
 - **THEN** the system displays info for only `web-app`
 
-#### Scenario: List with filters
-- **WHEN** user runs `grepom list --source gitlab --group my-org/frontend`
-- **THEN** the system displays repos matching both filters
+#### Scenario: List by group
+- **WHEN** user runs `grepom list --group frontend`
+- **THEN** the system displays repos only from group `frontend`
+
+#### Scenario: List by resource
+- **WHEN** user runs `grepom list --resource work-gl`
+- **THEN** the system displays repos from all groups and independent repos that reference resource `work-gl`
 
 ### Requirement: status command
 The system SHALL provide a `grepom status` command that shows git status for cloned repositories.
 
 #### Scenario: Status of all cloned repos
 - **WHEN** user runs `grepom status`
-- **THEN** the system shows git status (branch, clean/dirty, ahead/behind) for each cloned repo
+- **THEN** the system shows git status for each cloned repo across all groups and independent repos
 
-#### Scenario: Status of single repo
-- **WHEN** user runs `grepom status web-app`
-- **THEN** the system shows git status for `web-app` only
-
-#### Scenario: Status of not-yet-cloned repo
-- **WHEN** user runs `grepom status` and a repo has not been cloned yet
-- **THEN** the system shows "not cloned" for that repo
+#### Scenario: Status by group
+- **WHEN** user runs `grepom status --group frontend`
+- **THEN** the system shows git status only for repos in group `frontend`
 
 ### Requirement: pull command
 The system SHALL provide a `grepom pull` command that runs `git pull` on cloned repositories.
 
 #### Scenario: Pull all cloned repos
 - **WHEN** user runs `grepom pull`
-- **THEN** the system runs `git pull` on each cloned repo
+- **THEN** the system runs `git pull` on each cloned repo across all groups and independent repos
 
-#### Scenario: Pull single repo
-- **WHEN** user runs `grepom pull web-app`
-- **THEN** the system runs `git pull` only on `web-app`
+#### Scenario: Pull by group
+- **WHEN** user runs `grepom pull --group frontend`
+- **THEN** the system runs `git pull` only on repos in group `frontend`
 
 #### Scenario: Pull on not-yet-cloned repo
 - **WHEN** user runs `grepom pull` and a repo has not been cloned
@@ -92,24 +92,27 @@ The system SHALL provide a `grepom pull` command that runs `git pull` on cloned 
 - **THEN** the system shows the error and continues with the next repo
 
 ### Requirement: add command
-The system SHALL provide a `grepom add` command with two subcommands:
-- `grepom add source`: append a new API source to the config file
+The system SHALL provide a `grepom add` command with three subcommands:
+- `grepom add resource`: append a new resource to the config file
+- `grepom add group`: append a new group to the config file
 - `grepom add repo`: append a new explicit repo to the config file
 
-`grepom add source` SHALL support an optional `--name` flag to assign a name identifier to the source.
+#### Scenario: Add resource
+- **WHEN** user runs `grepom add resource --name work-gl --provider gitlab --url https://gitlab.mycompany.com --token ${GITLAB_TOKEN}`
+- **THEN** the system appends a resource entry `work-gl` to the config YAML file under `resources`
 
-#### Scenario: Add gitlab source with group and name
-- **WHEN** user runs `grepom add source --name my-gitlab --provider gitlab --url https://gitlab.com --group my-org/frontend`
-- **THEN** the system appends a source entry with `name: my-gitlab` to the config YAML file
+#### Scenario: Add group
+- **WHEN** user runs `grepom add group --name frontend --resource work-gl --path my-org/frontend --local-path ./frontend --recursive`
+- **THEN** the system appends a group entry to the config YAML file under `groups`
 
-#### Scenario: Add github source with org
-- **WHEN** user runs `grepom add source --provider github --url https://github.com --org my-org`
-- **THEN** the system appends a source entry (without name field) to the config YAML file
+#### Scenario: Add repo to group
+- **WHEN** user runs `grepom add repo --name special --resource work-gl --url https://gitlab.../special.git --group frontend --path my-org/frontend/special`
+- **THEN** the system appends a repo entry to group `frontend`'s repos list
 
-#### Scenario: Add repo with custom path
-- **WHEN** user runs `grepom add repo --name special --url https://gitlab.com/other/special.git --path ./special`
-- **THEN** the system appends a repo entry to the config YAML file
+#### Scenario: Add independent repo
+- **WHEN** user runs `grepom add repo --name dotfiles --resource github --url https://github.com/me/dotfiles.git`
+- **THEN** the system appends a repo entry to the top-level `repos` list with default local_path `./dotfiles`
 
 #### Scenario: Add to specific config file
-- **WHEN** user runs `grepom -c /path/to/config.yml add source ...`
+- **WHEN** user runs `grepom -c /path/to/config.yml add resource ...`
 - **THEN** the system appends to `/path/to/config.yml`

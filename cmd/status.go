@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -10,12 +9,18 @@ import (
 	"github.com/wii/grepom/repo"
 )
 
+var (
+	statusGroup    string
+	statusResource string
+)
+
 var statusCmd = &cobra.Command{
 	Use:   "status [name]",
 	Short: "Show git status for repositories",
 	Long:  "Show git status (branch, clean/dirty, ahead/behind) for cloned repositories.",
-	Example: `  grepom status           # Status of all cloned repos
-  grepom status web-app    # Status of a specific repo`,
+	Example: `  grepom status           # Status of all repos
+  grepom status web-app    # Status of a specific repo
+  grepom status --group frontend  # Status of repos in a group`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
@@ -23,13 +28,16 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		filter := repo.Filter{}
+		filter := repo.Filter{
+			Group:    statusGroup,
+			Resource: statusResource,
+		}
 		if len(args) > 0 {
 			filter.Name = args[0]
 		}
 
 		resolver := repo.NewResolver(cfg)
-		repos, err := resolver.ResolveAndFilter(context.Background(), filter)
+		repos, err := resolver.ResolveAndFilter(filter)
 		if err != nil {
 			return err
 		}
@@ -41,6 +49,7 @@ var statusCmd = &cobra.Command{
 
 		for _, r := range repos {
 			fullPath := repo.FullPath(cfg.Base, r)
+
 			st := gitpkg.GetStatus(fullPath)
 
 			if !st.Cloned {
@@ -76,5 +85,7 @@ var statusCmd = &cobra.Command{
 }
 
 func init() {
+	statusCmd.Flags().StringVar(&statusGroup, "group", "", "filter by group name")
+	statusCmd.Flags().StringVar(&statusResource, "resource", "", "filter by resource name")
 	rootCmd.AddCommand(statusCmd)
 }

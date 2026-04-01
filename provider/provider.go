@@ -3,26 +3,36 @@ package provider
 import (
 	"context"
 	"fmt"
-
-	"github.com/wii/grepom/config"
 )
 
+// Repo represents a discovered remote repository.
 type Repo struct {
-	Name     string
-	CloneURL string
-	SSHURL   string
-	Path     string // relative path from base (includes group hierarchy)
-	Provider string
+	Name      string
+	CloneURL  string
+	SSHURL    string
+	Path      string // local relative path (derived from group settings)
+	Provider  string // "gitlab", "github", or "explicit"
+	Resource  string // resource name this repo came from
+	GroupName string // group name this repo belongs to (empty for standalone repos)
 }
 
+// GroupQuery specifies a remote group to discover repos from.
+type GroupQuery struct {
+	Path      string
+	Recursive bool
+}
+
+// ListReposParams contains the parameters for listing repos from a provider.
+type ListReposParams struct {
+	ServerURL string
+	Token     string
+	Groups    []GroupQuery
+	Orgs      []string
+}
+
+// Provider is the interface for remote repository providers.
 type Provider interface {
-	ListRepos(ctx context.Context, source config.Source) ([]Repo, error)
-}
-
-// SubGroupLister is an optional interface that providers can implement
-// to support discovering sub-groups for sync operations.
-type SubGroupLister interface {
-	ListSubGroups(ctx context.Context, source config.Source, groupPath string) ([]string, error)
+	ListRepos(ctx context.Context, params ListReposParams) ([]Repo, error)
 }
 
 var registry = map[string]func() Provider{}

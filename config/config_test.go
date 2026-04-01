@@ -9,20 +9,31 @@ import (
 	"time"
 )
 
+// --- Load tests ---
+
 func TestLoad_ValidConfig(t *testing.T) {
 	content := `
 base: ~/projects
-sources:
-  - provider: gitlab
-    url: https://gitlab.com
+resources:
+  work-gl:
+    provider: gitlab
+    url: https://gitlab.mycompany.com
     token: ${TEST_TOKEN}
-    groups:
-      - path: my-org/frontend
-        recursive: true
+groups:
+  - name: frontend
+    resource: work-gl
+    path: my-org/frontend
+    local_path: ./frontend
+    recursive: true
+    repos:
+      - name: shared-utils
+        url: https://gitlab.mycompany.com/my-org/frontend/shared-utils.git
+        path: my-org/frontend/shared-utils
 repos:
-  - name: special
-    url: https://gitlab.com/other/special.git
-    path: ./special
+  - name: dotfiles
+    resource: work-gl
+    url: https://gitlab.mycompany.com/me/dotfiles.git
+    local_path: ./dotfiles
 `
 	os.Setenv("TEST_TOKEN", "glpat-xxx")
 	defer os.Unsetenv("TEST_TOKEN")
@@ -42,31 +53,46 @@ repos:
 	if !filepath.IsAbs(cfg.Base) {
 		t.Errorf("base should be absolute after tilde expansion, got: %s", cfg.Base)
 	}
-	if len(cfg.Sources) != 1 {
-		t.Fatalf("expected 1 source, got %d", len(cfg.Sources))
+	if len(cfg.Resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(cfg.Resources))
 	}
-	if cfg.Sources[0].Token != "glpat-xxx" {
-		t.Errorf("token not expanded, got: %s", cfg.Sources[0].Token)
+	res, ok := cfg.Resources["work-gl"]
+	if !ok {
+		t.Fatal("expected resource 'work-gl'")
 	}
-	if len(cfg.Sources[0].Groups) != 1 {
-		t.Fatalf("expected 1 group, got %d", len(cfg.Sources[0].Groups))
+	if res.Token != "glpat-xxx" {
+		t.Errorf("token not expanded, got: %s", res.Token)
 	}
-	if !cfg.Sources[0].Groups[0].Recursive {
+	if res.Provider != "gitlab" {
+		t.Errorf("expected provider gitlab, got: %s", res.Provider)
+	}
+	if len(cfg.Groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(cfg.Groups))
+	}
+	if cfg.Groups[0].Name != "frontend" {
+		t.Errorf("expected group name 'frontend', got: %s", cfg.Groups[0].Name)
+	}
+	if cfg.Groups[0].Recursive != true {
 		t.Error("expected recursive=true")
 	}
-	if len(cfg.Repos) != 1 || cfg.Repos[0].Name != "special" {
-		t.Error("repo entry not parsed correctly")
+	if len(cfg.Groups[0].Repos) != 1 {
+		t.Fatalf("expected 1 repo in group, got %d", len(cfg.Groups[0].Repos))
+	}
+	if len(cfg.Repos) != 1 {
+		t.Fatalf("expected 1 standalone repo, got %d", len(cfg.Repos))
+	}
+	if cfg.Repos[0].Name != "dotfiles" {
+		t.Errorf("expected standalone repo 'dotfiles', got: %s", cfg.Repos[0].Name)
 	}
 }
 
 func TestLoad_MissingBase(t *testing.T) {
 	content := `
-sources:
-  - provider: gitlab
+resources:
+  work-gl:
+    provider: gitlab
     url: https://gitlab.com
     token: test
-    groups:
-      - path: my-org
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yml")
@@ -81,12 +107,15 @@ sources:
 func TestLoad_UnsupportedProvider(t *testing.T) {
 	content := `
 base: ~/projects
-sources:
-  - provider: bitbucket
+resources:
+  my-res:
+    provider: bitbucket
     url: https://bitbucket.org
     token: test
-    groups:
-      - path: my-org
+groups:
+  - name: test
+    resource: my-res
+    path: my-org
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yml")
@@ -101,12 +130,15 @@ sources:
 func TestLoad_UndefinedEnvVar(t *testing.T) {
 	content := `
 base: ~/projects
-sources:
-  - provider: gitlab
+resources:
+  my-res:
+    provider: gitlab
     url: https://gitlab.com
     token: ${UNDEFINED_VAR}
-    groups:
-      - path: my-org
+groups:
+  - name: test
+    resource: my-res
+    path: my-org
 `
 	os.Unsetenv("UNDEFINED_VAR")
 
@@ -122,6 +154,216 @@ sources:
 		t.Errorf("error should mention the env var name, got: %v", err)
 	}
 }
+
+func TestLoad_GroupReferencesMissingResource(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  work-gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: test
+    resource: nonexistent
+    path: my-org
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for missing resource reference")
+	}
+}
+
+func TestLoad_DuplicateGroupNames(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: frontend
+    resource: gl
+    path: org1/frontend
+  - name: frontend
+    resource: gl
+    path: org2/frontend
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for duplicate group names")
+	}
+	if !strings.Contains(err.Error(), "duplicate group name") {
+		t.Errorf("error should mention duplicate, got: %v", err)
+	}
+}
+
+func TestLoad_GroupRepoPathMismatch(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+    repos:
+      - name: wrong
+        url: https://gitlab.com/other/repo.git
+        path: other-org/backend
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for repo path not matching group path")
+	}
+}
+
+func TestLoad_DefaultLocalPaths(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+repos:
+  - name: dotfiles
+    resource: gl
+    url: https://gitlab.com/me/dotfiles.git
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Groups[0].LocalPath != "./frontend" {
+		t.Errorf("expected default local_path './frontend', got: %s", cfg.Groups[0].LocalPath)
+	}
+	if cfg.Repos[0].LocalPath != "./dotfiles" {
+		t.Errorf("expected default local_path './dotfiles', got: %s", cfg.Repos[0].LocalPath)
+	}
+}
+
+// --- Token placeholder tests ---
+
+func TestResolveToken_PlainText(t *testing.T) {
+	result, err := resolveToken("glpat-xxxxxxxxxxxx")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "glpat-xxxxxxxxxxxx" {
+		t.Errorf("expected plain text token unchanged, got: %s", result)
+	}
+}
+
+func TestResolveToken_EnvVar(t *testing.T) {
+	os.Setenv("MY_TOKEN", "secret-value")
+	defer os.Unsetenv("MY_TOKEN")
+
+	result, err := resolveToken("${MY_TOKEN}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "secret-value" {
+		t.Errorf("expected resolved value, got: %s", result)
+	}
+}
+
+func TestResolveToken_Empty(t *testing.T) {
+	result, err := resolveToken("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "" {
+		t.Errorf("expected empty string, got: %s", result)
+	}
+}
+
+func TestResolveToken_UndefinedEnvVar(t *testing.T) {
+	os.Unsetenv("DEFINITELY_NOT_SET_TOKEN")
+
+	_, err := resolveToken("${DEFINITELY_NOT_SET_TOKEN}")
+	if err == nil {
+		t.Fatal("expected error for undefined env var")
+	}
+}
+
+// --- Write config tests ---
+
+func TestWriteConfig_PreservesTokenPlaceholder(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  work-gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: ${TEST_WRITE_TOKEN}
+groups:
+  - name: test
+    resource: work-gl
+    path: my-org
+`
+	os.Setenv("TEST_WRITE_TOKEN", "glpat-write-test")
+	defer os.Unsetenv("TEST_WRITE_TOKEN")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	res := cfg.Resources["work-gl"]
+	if res.Token != "glpat-write-test" {
+		t.Fatalf("expected resolved token, got: %s", res.Token)
+	}
+
+	// Add a repo and write back
+	cfg.Repos = append(cfg.Repos, Repo{Name: "test-repo", Resource: "work-gl", URL: "https://gitlab.com/test.git", LocalPath: "./test-repo"})
+	if err := writeConfig(path, cfg); err != nil {
+		t.Fatalf("writeConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	rawContent := string(data)
+	if !strings.Contains(rawContent, "${TEST_WRITE_TOKEN}") {
+		t.Errorf("token placeholder should be preserved in file, got:\n%s", rawContent)
+	}
+	if strings.Contains(rawContent, "glpat-write-test") {
+		t.Errorf("resolved token should NOT appear in file, got:\n%s", rawContent)
+	}
+}
+
+// --- FindConfig tests ---
 
 func TestFindConfig_ExplicitPath(t *testing.T) {
 	dir := t.TempDir()
@@ -166,188 +408,274 @@ func TestFindConfig_NotFound(t *testing.T) {
 	}
 }
 
-func TestAddSource(t *testing.T) {
+// --- Path resolution tests ---
+
+func TestResolveGroupRepoPath_DirectChild(t *testing.T) {
+	result := ResolveGroupRepoPath("/home/user/projects", "./frontend", "my-org/frontend", "my-org/frontend/shared-utils")
+	expected := filepath.Join("/home/user/projects", "frontend", "shared-utils")
+	if result != expected {
+		t.Errorf("expected %s, got %s", expected, result)
+	}
+}
+
+func TestResolveGroupRepoPath_NestedSubgroup(t *testing.T) {
+	result := ResolveGroupRepoPath("/home/user/projects", "./frontend", "my-org/frontend", "my-org/frontend/ui/design-system")
+	expected := filepath.Join("/home/user/projects", "frontend", "ui", "design-system")
+	if result != expected {
+		t.Errorf("expected %s, got %s", expected, result)
+	}
+}
+
+func TestResolveGroupRepoPath_ThreeLevelsDeep(t *testing.T) {
+	result := ResolveGroupRepoPath("/home/user/projects", "./frontend", "my-org/frontend", "my-org/frontend/ui/components/button-lib")
+	expected := filepath.Join("/home/user/projects", "frontend", "ui", "components", "button-lib")
+	if result != expected {
+		t.Errorf("expected %s, got %s", expected, result)
+	}
+}
+
+func TestResolveRepoPath(t *testing.T) {
+	result := ResolveRepoPath("/home/user/projects", "./dotfiles")
+	expected := filepath.Join("/home/user/projects", "dotfiles")
+	if result != expected {
+		t.Errorf("expected %s, got %s", expected, result)
+	}
+}
+
+// --- Path conflict detection tests ---
+
+func TestDetectPathConflicts_NoConflict(t *testing.T) {
+	cfg := &Config{
+		Base: "/home/user/projects",
+		Resources: map[string]Resource{
+			"gl": {Provider: "gitlab", URL: "https://gitlab.com", Token: "test"},
+		},
+		Groups: []Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "my-org/frontend", LocalPath: "./frontend",
+				Repos: []GroupRepo{
+					{Name: "app", Path: "my-org/frontend/app", URL: "https://gitlab.com/my-org/frontend/app.git"},
+				},
+			},
+		},
+		Repos: []Repo{
+			{Name: "dotfiles", Resource: "gl", URL: "https://gitlab.com/me/dotfiles.git", LocalPath: "./dotfiles"},
+		},
+	}
+
+	if err := cfg.DetectPathConflicts(); err != nil {
+		t.Errorf("expected no conflict, got: %v", err)
+	}
+}
+
+func TestDetectPathConflicts_DuplicatePaths(t *testing.T) {
+	cfg := &Config{
+		Base: "/home/user/projects",
+		Resources: map[string]Resource{
+			"gl": {Provider: "gitlab", URL: "https://gitlab.com", Token: "test"},
+		},
+		Groups: []Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "my-org/frontend", LocalPath: "./frontend",
+				Repos: []GroupRepo{
+					{Name: "app", Path: "my-org/frontend/app", URL: "https://gitlab.com/my-org/frontend/app.git"},
+				},
+			},
+		},
+		Repos: []Repo{
+			{Name: "app", Resource: "gl", URL: "https://gitlab.com/me/app.git", LocalPath: "./frontend/app"},
+		},
+	}
+
+	err := cfg.DetectPathConflicts()
+	if err == nil {
+		t.Fatal("expected path conflict error")
+	}
+	if !strings.Contains(err.Error(), "path conflict") {
+		t.Errorf("expected path conflict message, got: %v", err)
+	}
+}
+
+// --- Add operations tests ---
+
+func TestInitConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+
+	if err := InitConfig(path, ""); err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after InitConfig failed: %v", err)
+	}
+	if cfg.Base == "" {
+		t.Error("base should not be empty")
+	}
+	if cfg.Resources == nil {
+		t.Error("resources should be initialized")
+	}
+}
+
+func TestInitConfig_AlreadyExists(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte("base: ~/projects"), 0644)
+
+	err := InitConfig(path, "")
+	if err == nil {
+		t.Fatal("expected error when config already exists")
+	}
+}
+
+func TestAddResource(t *testing.T) {
 	os.Setenv("GL_TOKEN", "test-token-value")
 	defer os.Unsetenv("GL_TOKEN")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yml")
 
-	source := Source{
+	res := Resource{
 		Provider: "gitlab",
 		URL:      "https://gitlab.com",
 		Token:    "${GL_TOKEN}",
-		Groups:   []GroupSource{{Path: "my-org", Recursive: true}},
 	}
 
-	err := AddSource(path, source)
-	if err != nil {
-		t.Fatalf("AddSource failed: %v", err)
+	if err := AddResource(path, "work-gl", res); err != nil {
+		t.Fatalf("AddResource failed: %v", err)
 	}
 
 	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load after AddSource failed: %v", err)
+		t.Fatalf("Load after AddResource failed: %v", err)
 	}
-	if len(cfg.Sources) != 1 {
-		t.Fatalf("expected 1 source, got %d", len(cfg.Sources))
+	if len(cfg.Resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(cfg.Resources))
 	}
-	if cfg.Sources[0].Provider != "gitlab" {
+	if cfg.Resources["work-gl"].Provider != "gitlab" {
 		t.Error("provider mismatch")
 	}
+
+	// Check file contains placeholder
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "${GL_TOKEN}") {
+		t.Error("token placeholder should be preserved in file")
+	}
 }
 
-func TestAddRepo(t *testing.T) {
+func TestAddGroup(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
 
-	repo := RepoEntry{
-		Name: "special",
-		URL:  "https://gitlab.com/other/special.git",
-		Path: "./special",
+	group := Group{
+		Name:     "frontend",
+		Resource: "gl",
+		Path:     "my-org/frontend",
 	}
 
-	err := AddRepo(path, repo)
-	if err != nil {
-		t.Fatalf("AddRepo failed: %v", err)
+	if err := AddGroup(path, group); err != nil {
+		t.Fatalf("AddGroup failed: %v", err)
 	}
 
 	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load after AddRepo failed: %v", err)
+		t.Fatalf("Load after AddGroup failed: %v", err)
 	}
-	if len(cfg.Repos) != 1 || cfg.Repos[0].Name != "special" {
-		t.Error("repo not added correctly")
+	if len(cfg.Groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(cfg.Groups))
+	}
+	if cfg.Groups[0].Name != "frontend" {
+		t.Error("group name mismatch")
 	}
 }
 
-func TestSyncGroups_AddNewGroups(t *testing.T) {
+func TestSyncGroupRepos_AddNewRepos(t *testing.T) {
 	content := `
 base: ~/projects
-sources:
-  - provider: gitlab
+resources:
+  gl:
+    provider: gitlab
     url: https://gitlab.com
-    token: test
-    groups:
-      - path: my-org/frontend
-        recursive: true
+    token: test-token
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+    local_path: ./frontend
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yml")
 	os.WriteFile(path, []byte(content), 0644)
 
-	newGroups := []GroupSource{
-		{Path: "my-org/backend", Recursive: true},
-		{Path: "my-org/mobile", Recursive: true},
+	newRepos := []GroupRepo{
+		{Name: "repo1", URL: "https://gitlab.com/my-org/frontend/repo1.git", Path: "my-org/frontend/repo1"},
+		{Name: "repo2", URL: "https://gitlab.com/my-org/frontend/repo2.git", Path: "my-org/frontend/repo2"},
 	}
 
-	err := SyncGroups(path, 0, newGroups)
+	added, err := SyncGroupRepos(path, "frontend", newRepos)
 	if err != nil {
-		t.Fatalf("SyncGroups failed: %v", err)
+		t.Fatalf("SyncGroupRepos failed: %v", err)
+	}
+	if added != 2 {
+		t.Errorf("expected 2 repos added, got %d", added)
 	}
 
 	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load after SyncGroups failed: %v", err)
+		t.Fatalf("Load after SyncGroupRepos failed: %v", err)
 	}
-
-	if len(cfg.Sources[0].Groups) != 3 {
-		t.Fatalf("expected 3 groups, got %d", len(cfg.Sources[0].Groups))
-	}
-
-	// Original group should be preserved
-	if cfg.Sources[0].Groups[0].Path != "my-org/frontend" {
-		t.Errorf("original group path wrong: %s", cfg.Sources[0].Groups[0].Path)
+	if len(cfg.Groups[0].Repos) != 2 {
+		t.Fatalf("expected 2 repos in group, got %d", len(cfg.Groups[0].Repos))
 	}
 }
 
-func TestSyncGroups_NoDuplicates(t *testing.T) {
+func TestSyncGroupRepos_NoDuplicates(t *testing.T) {
 	content := `
 base: ~/projects
-sources:
-  - provider: gitlab
+resources:
+  gl:
+    provider: gitlab
     url: https://gitlab.com
-    token: test
-    groups:
-      - path: my-org/frontend
-        recursive: true
+    token: test-token
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+    local_path: ./frontend
+    repos:
+      - name: repo1
+        url: https://gitlab.com/my-org/frontend/repo1.git
+        path: my-org/frontend/repo1
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yml")
 	os.WriteFile(path, []byte(content), 0644)
 
-	newGroups := []GroupSource{
-		{Path: "my-org/frontend", Recursive: true},
-		{Path: "my-org/backend", Recursive: true},
+	newRepos := []GroupRepo{
+		{Name: "repo1", URL: "https://gitlab.com/my-org/frontend/repo1.git", Path: "my-org/frontend/repo1"},
+		{Name: "repo2", URL: "https://gitlab.com/my-org/frontend/repo2.git", Path: "my-org/frontend/repo2"},
 	}
 
-	err := SyncGroups(path, 0, newGroups)
+	added, err := SyncGroupRepos(path, "frontend", newRepos)
 	if err != nil {
-		t.Fatalf("SyncGroups failed: %v", err)
+		t.Fatalf("SyncGroupRepos failed: %v", err)
 	}
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load after SyncGroups failed: %v", err)
-	}
-
-	// Should only have 2 groups (no duplicate)
-	if len(cfg.Sources[0].Groups) != 2 {
-		t.Fatalf("expected 2 groups (no duplicates), got %d", len(cfg.Sources[0].Groups))
+	if added != 1 {
+		t.Errorf("expected 1 repo added (dedup by URL), got %d", added)
 	}
 }
 
-func TestSyncGroups_NoChanges(t *testing.T) {
-	content := `
-base: ~/projects
-sources:
-  - provider: gitlab
-    url: https://gitlab.com
-    token: test
-    groups:
-      - path: my-org/frontend
-        recursive: true
-`
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-	os.WriteFile(path, []byte(content), 0644)
-	originalContent := content
-
-	newGroups := []GroupSource{
-		{Path: "my-org/frontend", Recursive: true},
-	}
-
-	err := SyncGroups(path, 0, newGroups)
-	if err != nil {
-		t.Fatalf("SyncGroups failed: %v", err)
-	}
-
-	// File should not have been rewritten (no new groups)
-	after, _ := os.ReadFile(path)
-	if string(after) != originalContent {
-		t.Error("config file should not be rewritten when no new groups")
-	}
-}
-
-func TestSyncGroups_InvalidSourceIndex(t *testing.T) {
-	content := `
-base: ~/projects
-sources:
-  - provider: gitlab
-    url: https://gitlab.com
-    token: test
-    groups:
-      - path: my-org/frontend
-`
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-	os.WriteFile(path, []byte(content), 0644)
-
-	err := SyncGroups(path, 5, []GroupSource{{Path: "new-group"}})
-	if err == nil {
-		t.Fatal("expected error for invalid source index")
-	}
-}
+// --- File lock test ---
 
 func TestWithFileLock_ConcurrentAccess(t *testing.T) {
 	dir := t.TempDir()
@@ -377,389 +705,82 @@ func TestWithFileLock_ConcurrentAccess(t *testing.T) {
 	}
 }
 
-// --- Token environment variable placeholder tests (Task 1.5) ---
+// --- FindGroup / FindResource tests ---
 
-func TestResolveToken_PlainText(t *testing.T) {
-	result, err := resolveToken("glpat-xxxxxxxxxxxx")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "glpat-xxxxxxxxxxxx" {
-		t.Errorf("expected plain text token unchanged, got: %s", result)
-	}
-}
-
-func TestResolveToken_EnvVar(t *testing.T) {
-	os.Setenv("MY_TOKEN", "secret-value")
-	defer os.Unsetenv("MY_TOKEN")
-
-	result, err := resolveToken("${MY_TOKEN}")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "secret-value" {
-		t.Errorf("expected resolved value, got: %s", result)
-	}
-}
-
-func TestResolveToken_Empty(t *testing.T) {
-	result, err := resolveToken("")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "" {
-		t.Errorf("expected empty string, got: %s", result)
-	}
-}
-
-func TestResolveToken_UndefinedEnvVar(t *testing.T) {
-	os.Unsetenv("DEFINITELY_NOT_SET_TOKEN")
-
-	_, err := resolveToken("${DEFINITELY_NOT_SET_TOKEN}")
-	if err == nil {
-		t.Fatal("expected error for undefined env var")
-	}
-	if !strings.Contains(err.Error(), "DEFINITELY_NOT_SET_TOKEN") {
-		t.Errorf("error should mention env var name, got: %v", err)
-	}
-}
-
-func TestResolveToken_NotPlaceholder(t *testing.T) {
-	// Strings that look like they might have vars but aren't full ${VAR} patterns
-	result, err := resolveToken("prefix-${TOO_MANY_THINGS}")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "prefix-${TOO_MANY_THINGS}" {
-		t.Errorf("non-placeholder should be returned as-is, got: %s", result)
-	}
-}
-
-func TestWriteConfig_PreservesTokenPlaceholder(t *testing.T) {
-	content := `
-base: ~/projects
-sources:
-  - provider: gitlab
-    url: https://gitlab.com
-    token: ${TEST_WRITE_TOKEN}
-    groups:
-      - path: my-org
-`
-	os.Setenv("TEST_WRITE_TOKEN", "glpat-write-test")
-	defer os.Unsetenv("TEST_WRITE_TOKEN")
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-	os.WriteFile(path, []byte(content), 0644)
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-
-	// Token should be resolved at runtime
-	if cfg.Sources[0].Token != "glpat-write-test" {
-		t.Fatalf("expected resolved token, got: %s", cfg.Sources[0].Token)
-	}
-
-	// Add a repo and write back
-	cfg.Repos = append(cfg.Repos, RepoEntry{Name: "test-repo", URL: "https://gitlab.com/test.git", Path: "test-repo"})
-	if err := writeConfig(path, cfg); err != nil {
-		t.Fatalf("writeConfig failed: %v", err)
-	}
-
-	// Read raw file and verify token placeholder is preserved
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-
-	rawContent := string(data)
-	if !strings.Contains(rawContent, "${TEST_WRITE_TOKEN}") {
-		t.Errorf("token placeholder should be preserved in file, got:\n%s", rawContent)
-	}
-	if strings.Contains(rawContent, "glpat-write-test") {
-		t.Errorf("resolved token should NOT appear in file, got:\n%s", rawContent)
-	}
-
-	// Token should still be resolved in memory
-	if cfg.Sources[0].Token != "glpat-write-test" {
-		t.Errorf("in-memory token should remain resolved, got: %s", cfg.Sources[0].Token)
-	}
-}
-
-// --- Source name field tests (Task 2.6) ---
-
-func TestLoad_SourceWithName(t *testing.T) {
-	content := `
-base: ~/projects
-sources:
-  - name: my-gitlab
-    provider: gitlab
-    url: https://gitlab.com
-    token: test-token
-    groups:
-      - path: my-org
-`
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-	os.WriteFile(path, []byte(content), 0644)
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-	if cfg.Sources[0].Name != "my-gitlab" {
-		t.Errorf("expected source name 'my-gitlab', got: %s", cfg.Sources[0].Name)
-	}
-}
-
-func TestLoad_DuplicateSourceNames(t *testing.T) {
-	content := `
-base: ~/projects
-sources:
-  - name: my-gitlab
-    provider: gitlab
-    url: https://gitlab.com
-    token: test1
-    groups:
-      - path: org1
-  - name: my-gitlab
-    provider: gitlab
-    url: https://gitlab.example.com
-    token: test2
-    groups:
-      - path: org2
-`
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-	os.WriteFile(path, []byte(content), 0644)
-
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for duplicate source names")
-	}
-	if !strings.Contains(err.Error(), "duplicate source name") {
-		t.Errorf("error should mention duplicate name, got: %v", err)
-	}
-}
-
-func TestFindSource_ByName(t *testing.T) {
+func TestFindGroup(t *testing.T) {
 	cfg := &Config{
-		Sources: []Source{
-			{Name: "my-gitlab", Provider: "gitlab", URL: "https://gitlab.com"},
-			{Name: "my-github", Provider: "github", URL: "https://github.com"},
+		Groups: []Group{
+			{Name: "frontend", Resource: "gl", Path: "org/frontend"},
+			{Name: "backend", Resource: "gl", Path: "org/backend"},
 		},
 	}
 
-	idx, src, err := cfg.FindSource("my-github")
+	idx, group, err := cfg.FindGroup("backend")
 	if err != nil {
-		t.Fatalf("FindSource failed: %v", err)
+		t.Fatalf("FindGroup failed: %v", err)
 	}
 	if idx != 1 {
 		t.Errorf("expected index 1, got %d", idx)
 	}
-	if src.Provider != "github" {
-		t.Errorf("expected github provider, got: %s", src.Provider)
+	if group.Name != "backend" {
+		t.Errorf("expected backend, got: %s", group.Name)
 	}
 }
 
-func TestFindSource_ByIndex(t *testing.T) {
+func TestFindGroup_NotFound(t *testing.T) {
 	cfg := &Config{
-		Sources: []Source{
-			{Provider: "gitlab", URL: "https://gitlab.com"},
-			{Provider: "github", URL: "https://github.com"},
+		Groups: []Group{
+			{Name: "frontend", Resource: "gl", Path: "org/frontend"},
 		},
 	}
 
-	idx, src, err := cfg.FindSource("0")
-	if err != nil {
-		t.Fatalf("FindSource failed: %v", err)
-	}
-	if idx != 0 {
-		t.Errorf("expected index 0, got %d", idx)
-	}
-	if src.Provider != "gitlab" {
-		t.Errorf("expected gitlab provider, got: %s", src.Provider)
-	}
-}
-
-func TestFindSource_NamePriorityOverIndex(t *testing.T) {
-	cfg := &Config{
-		Sources: []Source{
-			{Name: "0", Provider: "github", URL: "https://github.com"},
-			{Provider: "gitlab", URL: "https://gitlab.com"},
-		},
-	}
-
-	idx, src, err := cfg.FindSource("0")
-	if err != nil {
-		t.Fatalf("FindSource failed: %v", err)
-	}
-	// Name "0" matches source 0 (github), not index 0
-	if src.Provider != "github" {
-		t.Errorf("name should take priority, expected github, got: %s", src.Provider)
-	}
-	if idx != 0 {
-		t.Errorf("expected index 0, got %d", idx)
-	}
-}
-
-func TestFindSource_NotFound(t *testing.T) {
-	cfg := &Config{
-		Sources: []Source{
-			{Provider: "gitlab", URL: "https://gitlab.com"},
-		},
-	}
-
-	_, _, err := cfg.FindSource("nonexistent")
+	_, _, err := cfg.FindGroup("nonexistent")
 	if err == nil {
-		t.Fatal("expected error for nonexistent source")
+		t.Fatal("expected error for nonexistent group")
 	}
 }
 
-func TestFindSource_IndexOutOfRange(t *testing.T) {
+func TestFindResource(t *testing.T) {
 	cfg := &Config{
-		Sources: []Source{
-			{Provider: "gitlab", URL: "https://gitlab.com"},
+		Resources: map[string]Resource{
+			"work-gl": {Provider: "gitlab", URL: "https://gitlab.com"},
 		},
 	}
 
-	_, _, err := cfg.FindSource("5")
+	res, err := cfg.FindResource("work-gl")
+	if err != nil {
+		t.Fatalf("FindResource failed: %v", err)
+	}
+	if res.Provider != "gitlab" {
+		t.Errorf("expected gitlab, got: %s", res.Provider)
+	}
+}
+
+func TestFindResource_NotFound(t *testing.T) {
+	cfg := &Config{
+		Resources: map[string]Resource{},
+	}
+
+	_, err := cfg.FindResource("nonexistent")
 	if err == nil {
-		t.Fatal("expected error for out-of-range index")
+		t.Fatal("expected error for nonexistent resource")
 	}
 }
 
-func TestWriteConfig_SourceNamePreserved(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
+// --- URL auto-prefix test ---
 
-	cfg := &Config{
-		Base: "~/projects",
-		Sources: []Source{
-			{Name: "my-gitlab", Provider: "gitlab", URL: "https://gitlab.com", Token: "test"},
-		},
-	}
-	cfg.rawTokens = map[int]string{0: "test"}
-
-	if err := writeConfig(path, cfg); err != nil {
-		t.Fatalf("writeConfig failed: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-
-	content := string(data)
-	if !strings.Contains(content, "name: my-gitlab") {
-		t.Errorf("source name should be written to file, got:\n%s", content)
-	}
-}
-
-func TestWriteConfig_SourceNameOmitted(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-
-	cfg := &Config{
-		Base: "~/projects",
-		Sources: []Source{
-			{Provider: "gitlab", URL: "https://gitlab.com", Token: "test"},
-		},
-	}
-	cfg.rawTokens = map[int]string{0: "test"}
-
-	if err := writeConfig(path, cfg); err != nil {
-		t.Fatalf("writeConfig failed: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-
-	content := string(data)
-	if strings.Contains(content, "name:") {
-		t.Errorf("name field should be omitted when empty, got:\n%s", content)
-	}
-}
-
-// --- SyncRepos tests (Task 3.6) ---
-
-func TestSyncRepos_AddNewRepos(t *testing.T) {
+func TestLoad_ResourceURLAutoHTTPS(t *testing.T) {
 	content := `
 base: ~/projects
-sources:
-  - provider: gitlab
-    url: https://gitlab.com
-    token: test-token
-    groups:
-      - path: my-org
-`
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-	os.WriteFile(path, []byte(content), 0644)
-
-	newRepos := []RepoEntry{
-		{Name: "repo1", URL: "https://gitlab.com/my-org/repo1.git", Path: "my-org/repo1"},
-		{Name: "repo2", URL: "https://gitlab.com/my-org/repo2.git", Path: "my-org/repo2"},
-	}
-
-	added, err := SyncRepos(path, newRepos)
-	if err != nil {
-		t.Fatalf("SyncRepos failed: %v", err)
-	}
-	if added != 2 {
-		t.Errorf("expected 2 repos added, got %d", added)
-	}
-
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load after SyncRepos failed: %v", err)
-	}
-	if len(cfg.Repos) != 2 {
-		t.Fatalf("expected 2 repos in config, got %d", len(cfg.Repos))
-	}
-}
-
-func TestSyncRepos_NoDuplicates(t *testing.T) {
-	content := `
-base: ~/projects
-repos:
-  - name: repo1
-    url: https://gitlab.com/my-org/repo1.git
-    path: my-org/repo1
-`
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-	os.WriteFile(path, []byte(content), 0644)
-
-	newRepos := []RepoEntry{
-		{Name: "repo1", URL: "https://gitlab.com/my-org/repo1.git", Path: "my-org/repo1"},
-		{Name: "repo2", URL: "https://gitlab.com/my-org/repo2.git", Path: "my-org/repo2"},
-	}
-
-	added, err := SyncRepos(path, newRepos)
-	if err != nil {
-		t.Fatalf("SyncRepos failed: %v", err)
-	}
-	if added != 1 {
-		t.Errorf("expected 1 repo added (dedup by URL), got %d", added)
-	}
-}
-
-// --- Backward compatibility test (Task 4.4) ---
-
-func TestLoad_PlainTokenBackwardCompat(t *testing.T) {
-	content := `
-base: ~/projects
-sources:
-  - provider: gitlab
-    url: https://gitlab.com
-    token: glpat-plain-text-token
-    groups:
-      - path: my-org
+resources:
+  gl:
+    provider: gitlab
+    url: gitlab.mycompany.com
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yml")
@@ -769,48 +790,8 @@ sources:
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if cfg.Sources[0].Token != "glpat-plain-text-token" {
-		t.Errorf("plain token should work, got: %s", cfg.Sources[0].Token)
-	}
-}
-
-func TestAddSource_WithTokenPlaceholder(t *testing.T) {
-	os.Setenv("ADD_SOURCE_TOKEN", "resolved-token")
-	defer os.Unsetenv("ADD_SOURCE_TOKEN")
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.yml")
-
-	source := Source{
-		Name:     "test-source",
-		Provider: "gitlab",
-		URL:      "https://gitlab.com",
-		Token:    "${ADD_SOURCE_TOKEN}",
-		Groups:   []GroupSource{{Path: "my-org"}},
-	}
-
-	if err := AddSource(path, source); err != nil {
-		t.Fatalf("AddSource failed: %v", err)
-	}
-
-	// Verify file contains placeholder
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-	if !strings.Contains(string(data), "${ADD_SOURCE_TOKEN}") {
-		t.Errorf("file should contain token placeholder, got:\n%s", string(data))
-	}
-
-	// Verify loading resolves the token
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-	if cfg.Sources[0].Token != "resolved-token" {
-		t.Errorf("token should be resolved, got: %s", cfg.Sources[0].Token)
-	}
-	if cfg.Sources[0].Name != "test-source" {
-		t.Errorf("source name should be preserved, got: %s", cfg.Sources[0].Name)
+	res := cfg.Resources["gl"]
+	if !strings.HasPrefix(res.URL, "https://") {
+		t.Errorf("expected URL to have https:// prefix, got: %s", res.URL)
 	}
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -11,16 +10,18 @@ import (
 )
 
 var (
-	cloneGroup string
+	cloneGroup    string
+	cloneResource string
 )
 
 var cloneCmd = &cobra.Command{
 	Use:   "clone [name]",
 	Short: "Clone repositories to local filesystem",
-	Long:  "Clone repositories from configured sources to the base directory. Repositories are cloned preserving group/subgroup directory hierarchy.",
-	Example: `  grepom clone                        # Clone all repos
-  grepom clone web-app                 # Clone a specific repo
-  grepom clone --group my-org/frontend # Clone all repos in a group`,
+	Long:  "Clone repositories from configured groups and standalone repos. Repositories are cloned preserving directory hierarchy.",
+	Example: `  grepom clone                           # Clone all repos
+  grepom clone web-app                   # Clone a specific repo
+  grepom clone --group frontend          # Clone all repos in a group
+  grepom clone --resource work-gl        # Clone all repos from a resource`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
@@ -28,13 +29,13 @@ var cloneCmd = &cobra.Command{
 			return err
 		}
 
-		filter := repo.Filter{Group: cloneGroup}
+		filter := repo.Filter{Group: cloneGroup, Resource: cloneResource}
 		if len(args) > 0 {
 			filter.Name = args[0]
 		}
 
 		resolver := repo.NewResolver(cfg)
-		repos, err := resolver.ResolveAndFilter(context.Background(), filter)
+		repos, err := resolver.ResolveAndFilter(filter)
 		if err != nil {
 			return err
 		}
@@ -68,5 +69,6 @@ var cloneCmd = &cobra.Command{
 
 func init() {
 	cloneCmd.Flags().StringVar(&cloneGroup, "group", "", "clone all repos under a group")
+	cloneCmd.Flags().StringVar(&cloneResource, "resource", "", "clone all repos from a resource")
 	rootCmd.AddCommand(cloneCmd)
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -11,18 +10,18 @@ import (
 )
 
 var (
-	listSource string
-	listGroup  string
+	listGroup    string
+	listResource string
 )
 
 var listCmd = &cobra.Command{
 	Use:   "list [name]",
 	Short: "List discovered repositories",
-	Long:  "List repositories from all configured sources. Optionally filter by name, group, or provider.",
-	Example: `  grepom list                        # List all repos
-  grepom list web-app                 # List a specific repo
-  grepom list --source gitlab         # Filter by provider
-  grepom list --group my-org/frontend # Filter by group`,
+	Long:  "List repositories from all configured groups and standalone repos. Optionally filter by name, group, or resource.",
+	Example: `  grepom list                            # List all repos
+  grepom list web-app                     # List a specific repo
+  grepom list --group frontend            # List repos in a group
+  grepom list --resource work-gl          # List repos from a resource`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
@@ -31,15 +30,15 @@ var listCmd = &cobra.Command{
 		}
 
 		filter := repo.Filter{
-			Provider: listSource,
 			Group:    listGroup,
+			Resource: listResource,
 		}
 		if len(args) > 0 {
 			filter.Name = args[0]
 		}
 
 		resolver := repo.NewResolver(cfg)
-		repos, err := resolver.ResolveAndFilter(context.Background(), filter)
+		repos, err := resolver.ResolveAndFilter(filter)
 		if err != nil {
 			return err
 		}
@@ -50,7 +49,7 @@ var listCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tPATH\tPROVIDER\tCLONED")
+		fmt.Fprintln(w, "NAME\tPATH\tGROUP\tRESOURCE\tCLONED")
 
 		for _, r := range repos {
 			cloned := "no"
@@ -58,7 +57,7 @@ var listCmd = &cobra.Command{
 			if _, err := os.Stat(fullPath); err == nil {
 				cloned = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Name, r.Path, r.Provider, cloned)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Path, r.GroupName, r.Resource, cloned)
 		}
 		w.Flush()
 
@@ -67,7 +66,7 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().StringVar(&listSource, "source", "", "filter by provider (gitlab, github)")
-	listCmd.Flags().StringVar(&listGroup, "group", "", "filter by group path")
+	listCmd.Flags().StringVar(&listGroup, "group", "", "filter by group name")
+	listCmd.Flags().StringVar(&listResource, "resource", "", "filter by resource name")
 	rootCmd.AddCommand(listCmd)
 }

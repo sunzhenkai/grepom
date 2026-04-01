@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/wii/grepom/config"
 )
 
 func init() {
@@ -22,12 +20,12 @@ type GitHubProvider struct {
 }
 
 type githubRepo struct {
-	Name        string `json:"name"`
-	FullName    string `json:"full_name"`
-	CloneURL    string `json:"clone_url"`
-	SSHURL      string `json:"ssh_url"`
-	HTMLURL     string `json:"html_url"`
-	Private     bool   `json:"private"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	CloneURL string `json:"clone_url"`
+	SSHURL   string `json:"ssh_url"`
+	HTMLURL  string `json:"html_url"`
+	Private  bool   `json:"private"`
 }
 
 func (g *GitHubProvider) getClient() *http.Client {
@@ -37,13 +35,13 @@ func (g *GitHubProvider) getClient() *http.Client {
 	return g.client
 }
 
-func (g *GitHubProvider) ListRepos(ctx context.Context, source config.Source) ([]Repo, error) {
+func (g *GitHubProvider) ListRepos(ctx context.Context, params ListReposParams) ([]Repo, error) {
 	var allRepos []Repo
 
-	for _, org := range source.Orgs {
-		repos, err := g.listOrgRepos(ctx, source, org.Name)
+	for _, org := range params.Orgs {
+		repos, err := g.listOrgRepos(ctx, params, org)
 		if err != nil {
-			return nil, fmt.Errorf("github: org %s: %w", org.Name, err)
+			return nil, fmt.Errorf("github: org %s: %w", org, err)
 		}
 		allRepos = append(allRepos, repos...)
 	}
@@ -51,15 +49,15 @@ func (g *GitHubProvider) ListRepos(ctx context.Context, source config.Source) ([
 	return allRepos, nil
 }
 
-func (g *GitHubProvider) listOrgRepos(ctx context.Context, source config.Source, orgName string) ([]Repo, error) {
+func (g *GitHubProvider) listOrgRepos(ctx context.Context, params ListReposParams, orgName string) ([]Repo, error) {
 	var allRepos []Repo
 	page := 1
 
 	for {
-		url := fmt.Sprintf("%s/orgs/%s/repos?per_page=100&page=%d&type=all", source.URL, orgName, page)
+		apiURL := fmt.Sprintf("%s/orgs/%s/repos?per_page=100&page=%d&type=all", params.ServerURL, orgName, page)
 
 		var repos []githubRepo
-		nextPage, err := g.getWithPagination(ctx, source.Token, url, &repos)
+		nextPage, err := g.getWithPagination(ctx, params.Token, apiURL, &repos)
 		if err != nil {
 			return nil, err
 		}
@@ -83,8 +81,8 @@ func (g *GitHubProvider) listOrgRepos(ctx context.Context, source config.Source,
 	return allRepos, nil
 }
 
-func (g *GitHubProvider) getWithPagination(ctx context.Context, token, url string, v interface{}) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (g *GitHubProvider) getWithPagination(ctx context.Context, token, apiURL string, v interface{}) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("create request: %w", err)
 	}

@@ -9,41 +9,41 @@ import (
 
 var addCmd = &cobra.Command{
 	Use:   "add",
-	Short: "Add a source or repository to the config file",
-	Long:  "Append a new API source or explicit repository entry to the configuration file.",
-	Example: `  grepom add source --name my-gitlab --provider gitlab --url https://gitlab.com --group my-org/frontend --recursive
-  grepom add source --provider github --url https://github.com --org my-org
-  grepom add repo --name special --url https://gitlab.com/other/special.git --path ./special`,
+	Short: "Add a resource, group, or repository to the config file",
+	Long:  "Append a new resource, group, or repo entry to the configuration file.",
+	Example: `  grepom add resource --name work-gl --provider gitlab --url https://gitlab.com --token ${GL_TOKEN}
+  grepom add group --name frontend --resource work-gl --path my-org/frontend --local-path ./frontend --recursive
+  grepom add repo --name dotfiles --resource github --url https://github.com/me/dotfiles.git`,
 }
 
 func init() {
 	rootCmd.AddCommand(addCmd)
 }
 
-// add source subcommand
+// --- add resource ---
 var (
-	addProvider  string
-	addName      string
-	addURL       string
-	addToken     string
-	addGroup     []string
-	addOrg       []string
-	addRecursive bool
+	addResName     string
+	addResProvider string
+	addResURL      string
+	addResToken    string
 )
 
-var addSourceCmd = &cobra.Command{
-	Use:   "source",
-	Short: "Add an API source to the config file",
-	Long:  "Add a GitLab or GitHub API source to fetch repositories from.",
+var addResourceCmd = &cobra.Command{
+	Use:   "resource",
+	Short: "Add an authentication resource to the config file",
+	Long:  "Add a GitLab or GitHub API resource with connection and authentication details.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if addProvider == "" {
+		if addResProvider == "" {
 			return fmt.Errorf("--provider is required (gitlab or github)")
 		}
-		if addProvider != "gitlab" && addProvider != "github" {
-			return fmt.Errorf("unsupported provider: %s (use gitlab or github)", addProvider)
+		if addResProvider != "gitlab" && addResProvider != "github" {
+			return fmt.Errorf("unsupported provider: %s (use gitlab or github)", addResProvider)
 		}
-		if addURL == "" {
+		if addResURL == "" {
 			return fmt.Errorf("--url is required")
+		}
+		if addResName == "" {
+			return fmt.Errorf("--name is required")
 		}
 
 		path, err := resolvedConfigPath()
@@ -51,59 +51,98 @@ var addSourceCmd = &cobra.Command{
 			path = configFile
 		}
 
-		source := config.Source{
-			Name:     addName,
-			Provider: addProvider,
-			URL:      addURL,
-			Token:    addToken,
+		res := config.Resource{
+			Provider: addResProvider,
+			URL:      addResURL,
+			Token:    addResToken,
 		}
 
-		for _, g := range addGroup {
-			source.Groups = append(source.Groups, config.GroupSource{
-				Path:      g,
-				Recursive: addRecursive,
-			})
-		}
-
-		for _, o := range addOrg {
-			source.Orgs = append(source.Orgs, config.OrgSource{Name: o})
-		}
-
-		if len(source.Groups) == 0 && len(source.Orgs) == 0 {
-			return fmt.Errorf("at least one --group or --org is required")
-		}
-
-		if err := config.AddSource(path, source); err != nil {
+		if err := config.AddResource(path, addResName, res); err != nil {
 			return err
 		}
 
-		fmt.Printf("Added %s source to %s\n", addProvider, path)
+		fmt.Printf("Added resource %s to %s\n", addResName, path)
 		return nil
 	},
 }
 
 func init() {
-	addSourceCmd.Flags().StringVar(&addProvider, "provider", "", "provider type (gitlab or github)")
-	addSourceCmd.Flags().StringVar(&addName, "name", "", "optional name to identify this source (e.g. my-gitlab)")
-	addSourceCmd.Flags().StringVar(&addURL, "url", "", "API base URL")
-	addSourceCmd.Flags().StringVar(&addToken, "token", "", "API token (or use ${ENV_VAR} syntax)")
-	addSourceCmd.Flags().StringArrayVar(&addGroup, "group", nil, "group path to fetch (GitLab)")
-	addSourceCmd.Flags().StringArrayVar(&addOrg, "org", nil, "organization name (GitHub)")
-	addSourceCmd.Flags().BoolVar(&addRecursive, "recursive", false, "recursively fetch subgroups")
-	addCmd.AddCommand(addSourceCmd)
+	addResourceCmd.Flags().StringVar(&addResName, "name", "", "resource name (required)")
+	addResourceCmd.Flags().StringVar(&addResProvider, "provider", "", "provider type (gitlab or github)")
+	addResourceCmd.Flags().StringVar(&addResURL, "url", "", "API base URL")
+	addResourceCmd.Flags().StringVar(&addResToken, "token", "", "API token (supports ${ENV_VAR} syntax)")
+	addCmd.AddCommand(addResourceCmd)
 }
 
-// add repo subcommand
+// --- add group ---
 var (
-	addRepoName string
-	addRepoURL  string
-	addRepoPath string
+	addGroupName     string
+	addGroupResource string
+	addGroupPath     string
+	addGroupLocal    string
+	addGroupRecurse  bool
+)
+
+var addGroupCmd = &cobra.Command{
+	Use:   "group",
+	Short: "Add a group to the config file",
+	Long:  "Add a remote group (GitLab group or GitHub org) whose repos will be managed.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if addGroupName == "" {
+			return fmt.Errorf("--name is required")
+		}
+		if addGroupResource == "" {
+			return fmt.Errorf("--resource is required")
+		}
+		if addGroupPath == "" {
+			return fmt.Errorf("--path is required")
+		}
+
+		path, err := resolvedConfigPath()
+		if err != nil {
+			path = configFile
+		}
+
+		group := config.Group{
+			Name:      addGroupName,
+			Resource:  addGroupResource,
+			Path:      addGroupPath,
+			LocalPath: addGroupLocal,
+			Recursive: addGroupRecurse,
+		}
+
+		if err := config.AddGroup(path, group); err != nil {
+			return err
+		}
+
+		fmt.Printf("Added group %s to %s\n", addGroupName, path)
+		return nil
+	},
+}
+
+func init() {
+	addGroupCmd.Flags().StringVar(&addGroupName, "name", "", "group name (required)")
+	addGroupCmd.Flags().StringVar(&addGroupResource, "resource", "", "resource name to use for authentication")
+	addGroupCmd.Flags().StringVar(&addGroupPath, "path", "", "remote group path (e.g. my-org/frontend)")
+	addGroupCmd.Flags().StringVar(&addGroupLocal, "local-path", "", "local directory path relative to base (default: ./<name>)")
+	addGroupCmd.Flags().BoolVar(&addGroupRecurse, "recursive", false, "recursively discover subgroups (GitLab only)")
+	addCmd.AddCommand(addGroupCmd)
+}
+
+// --- add repo ---
+var (
+	addRepoName      string
+	addRepoResource  string
+	addRepoURL       string
+	addRepoLocalPath string
+	addRepoGroup     string
+	addRepoPath      string
 )
 
 var addRepoCmd = &cobra.Command{
 	Use:   "repo",
-	Short: "Add an explicit repository to the config file",
-	Long:  "Add a repository entry with a custom clone URL and path.",
+	Short: "Add a repository to the config file",
+	Long:  "Add a standalone repo or a repo to an existing group.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if addRepoName == "" {
 			return fmt.Errorf("--name is required")
@@ -111,8 +150,8 @@ var addRepoCmd = &cobra.Command{
 		if addRepoURL == "" {
 			return fmt.Errorf("--url is required")
 		}
-		if addRepoPath == "" {
-			addRepoPath = "./" + addRepoName
+		if addRepoResource == "" {
+			return fmt.Errorf("--resource is required")
 		}
 
 		path, err := resolvedConfigPath()
@@ -120,24 +159,46 @@ var addRepoCmd = &cobra.Command{
 			path = configFile
 		}
 
-		entry := config.RepoEntry{
-			Name: addRepoName,
-			URL:  addRepoURL,
-			Path: addRepoPath,
+		if addRepoGroup != "" {
+			// Add to group
+			repo := config.GroupRepo{
+				Name: addRepoName,
+				URL:  addRepoURL,
+				Path: addRepoPath,
+			}
+			if repo.Path == "" {
+				repo.Path = addRepoName
+			}
+
+			if err := config.AddGroupRepo(path, addRepoGroup, repo); err != nil {
+				return err
+			}
+			fmt.Printf("Added repo %s to group %s in %s\n", addRepoName, addRepoGroup, path)
+		} else {
+			// Standalone repo
+			repo := config.Repo{
+				Name:      addRepoName,
+				Resource:  addRepoResource,
+				URL:       addRepoURL,
+				LocalPath: addRepoLocalPath,
+			}
+
+			if err := config.AddRepo(path, repo); err != nil {
+				return err
+			}
+			fmt.Printf("Added repo %s to %s\n", addRepoName, path)
 		}
 
-		if err := config.AddRepo(path, entry); err != nil {
-			return err
-		}
-
-		fmt.Printf("Added repo %s to %s\n", addRepoName, path)
 		return nil
 	},
 }
 
 func init() {
 	addRepoCmd.Flags().StringVar(&addRepoName, "name", "", "repository name")
+	addRepoCmd.Flags().StringVar(&addRepoResource, "resource", "", "resource name for authentication")
 	addRepoCmd.Flags().StringVar(&addRepoURL, "url", "", "clone URL")
-	addRepoCmd.Flags().StringVar(&addRepoPath, "path", "", "relative path from base (default: ./<name>)")
+	addRepoCmd.Flags().StringVar(&addRepoLocalPath, "local-path", "", "local path relative to base (default: ./<name>)")
+	addRepoCmd.Flags().StringVar(&addRepoGroup, "group", "", "group name to add this repo to (omit for standalone)")
+	addRepoCmd.Flags().StringVar(&addRepoPath, "path", "", "remote path for group repo (e.g. my-org/frontend/repo-name)")
 	addCmd.AddCommand(addRepoCmd)
 }
