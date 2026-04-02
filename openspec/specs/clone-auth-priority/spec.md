@@ -75,8 +75,8 @@
 1. group/repo 级别 SSH key（SSH + 指定 key）
 2. group/repo 级别 token（HTTPS + token URL）
 3. resource 级别 SSH key（SSH + 指定 key）
-4. resource 级别 token（HTTPS + token URL）
-5. 推导的 SSH URL（系统默认 SSH）
+4. 推导的 SSH URL（系统默认 SSH）
+5. resource 级别 token（HTTPS + token URL）
 6. 裸 HTTP URL
 
 未配置的级别 SHALL 被跳过，不产生延迟。
@@ -91,7 +91,15 @@
 
 #### Scenario: resource SSH key 优先于 resource token
 - **WHEN** group/repo 未配置任何认证，resource 同时配置了 ssh_key 和 token
-- **THEN** 系统先尝试 resource 的 SSH key 认证，若失败后使用 resource 的 token
+- **THEN** 系统先尝试 resource 的 SSH key 认证，再尝试 default SSH，最后才使用 resource 的 token
+
+#### Scenario: default SSH 优先于 resource token
+- **WHEN** group/repo 未配置 ssh_key，resource 配置了 token，且系统有默认 SSH 配置
+- **THEN** 系统在 resource token 之前先尝试 default SSH（系统默认 SSH agent/config）
+
+#### Scenario: group SSH 失败后回退到 default SSH 再到 resource token
+- **WHEN** group 配置了 ssh_key 且 clone 失败，resource 配置了 token
+- **THEN** 系统依次尝试 group token → default SSH → resource token
 
 #### Scenario: resource SSH key 作为回退
 - **WHEN** group/repo 未配置 ssh_key，但 resource 配置了 ssh_key 和 token，且 token 认证失败

@@ -44,8 +44,8 @@ type authStrategy struct {
 }
 
 // buildAuthStrategies builds an ordered list of clone strategies based on the
-// SSH-priority chain: group/repo SSH → group/repo token → resource SSH →
-// resource token → default SSH → bare HTTP.
+// priority chain: group/repo SSH → group/repo token → resource SSH →
+// default SSH → resource token → bare HTTP.
 func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrategy {
 	var strategies []authStrategy
 
@@ -77,21 +77,21 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 		})
 	}
 
-	// 4. resource token
+	// 4. Default SSH (derived URL, uses system SSH agent/config)
+	if sshURL != "" {
+		strategies = append(strategies, authStrategy{
+			label:  "SSH 认证 (默认)",
+			url:    sshURL,
+			sshKey: "",
+		})
+	}
+
+	// 5. resource token
 	if !opts.HasGroupToken && opts.Token != "" && httpURL != "" {
 		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
 		strategies = append(strategies, authStrategy{
 			label:  "token 认证 (resource)",
 			url:    tokenURL,
-			sshKey: "",
-		})
-	}
-
-	// 5. Default SSH (derived URL)
-	if sshURL != "" {
-		strategies = append(strategies, authStrategy{
-			label:  "SSH 认证 (默认)",
-			url:    sshURL,
 			sshKey: "",
 		})
 	}
@@ -109,7 +109,8 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 }
 
 // Clone clones a repository, creating parent directories as needed.
-// It tries authentication methods in SSH-priority order using the 6-level chain.
+// It tries authentication methods in priority order using the 6-level chain:
+// group/repo SSH → group/repo token → resource SSH → default SSH → resource token → HTTP.
 func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create directory: %w", err)

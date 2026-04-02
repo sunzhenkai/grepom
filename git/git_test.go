@@ -253,16 +253,25 @@ func TestBuildAuthStrategies_ResourceSSHPriorityOverToken(t *testing.T) {
 	}
 	strategies := buildAuthStrategies("git@gitlab.com:org/repo.git", "https://gitlab.com/org/repo.git", opts)
 
-	// First should be resource SSH key (not token)
-	if len(strategies) < 2 {
-		t.Fatalf("expected at least 2 strategies, got %d", len(strategies))
+	// Expected order: resource SSH → default SSH → resource token → HTTP
+	if len(strategies) != 4 {
+		t.Fatalf("expected 4 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
 	}
+	// First should be resource SSH key
 	if !strings.Contains(strategies[0].label, "SSH key") || !strings.Contains(strategies[0].label, "resource") {
 		t.Errorf("expected first strategy to be resource SSH key, got: %s", strategies[0].label)
 	}
-	// Second should be resource token
-	if !strings.Contains(strategies[1].label, "token") || !strings.Contains(strategies[1].label, "resource") {
-		t.Errorf("expected second strategy to be resource token, got: %s", strategies[1].label)
+	// Second should be default SSH
+	if !strings.Contains(strategies[1].label, "默认") {
+		t.Errorf("expected second strategy to be default SSH, got: %s", strategies[1].label)
+	}
+	// Third should be resource token
+	if !strings.Contains(strategies[2].label, "token") || !strings.Contains(strategies[2].label, "resource") {
+		t.Errorf("expected third strategy to be resource token, got: %s", strategies[2].label)
+	}
+	// Fourth should be HTTP
+	if !strings.Contains(strategies[3].label, "HTTP") {
+		t.Errorf("expected fourth strategy to be HTTP, got: %s", strategies[3].label)
 	}
 }
 
@@ -278,18 +287,22 @@ func TestBuildAuthStrategies_GroupRepoAuthBeforeResource(t *testing.T) {
 	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
 
 	// 1. group/repo SSH key
-	// 2. resource token (not resource SSH since HasGroupSSHKey=true means SSH is from group)
-	// 3. default SSH
+	// 2. default SSH (since group has SSH, resource SSH is skipped; but default SSH is always tried)
+	// 3. resource token (HasGroupToken=false, so resource token is included)
 	// 4. HTTP
-	if len(strategies) < 2 {
-		t.Fatalf("expected at least 2 strategies, got %d", len(strategies))
+	if len(strategies) != 4 {
+		t.Fatalf("expected 4 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
 	}
 	if !strings.Contains(strategies[0].label, "SSH key") || !strings.Contains(strategies[0].label, "group/repo") {
 		t.Errorf("expected first strategy to be group/repo SSH key, got: %s", strategies[0].label)
 	}
-	// Since HasGroupToken=false, second should be resource token (NOT resource SSH, because HasGroupSSHKey=true)
-	if !strings.Contains(strategies[1].label, "token") || !strings.Contains(strategies[1].label, "resource") {
-		t.Errorf("expected second strategy to be resource token, got: %s", strategies[1].label)
+	// Second should be default SSH
+	if !strings.Contains(strategies[1].label, "默认") {
+		t.Errorf("expected second strategy to be default SSH, got: %s", strategies[1].label)
+	}
+	// Third should be resource token
+	if !strings.Contains(strategies[2].label, "token") || !strings.Contains(strategies[2].label, "resource") {
+		t.Errorf("expected third strategy to be resource token, got: %s", strategies[2].label)
 	}
 }
 
@@ -316,15 +329,20 @@ func TestBuildAuthStrategies_OnlyToken(t *testing.T) {
 	}
 	strategies := buildAuthStrategies("git@gitlab.com:org/repo.git", "https://gitlab.com/org/repo.git", opts)
 
-	// Should have: resource token → default SSH → HTTP
+	// Should have: default SSH → resource token → HTTP
 	if len(strategies) != 3 {
-		t.Fatalf("expected 3 strategies, got %d", len(strategies))
+		t.Fatalf("expected 3 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
 	}
-	if !strings.Contains(strategies[0].label, "token") || !strings.Contains(strategies[0].label, "resource") {
-		t.Errorf("expected first to be resource token, got: %s", strategies[0].label)
+	// First should be default SSH (resource SSH skipped because no SSH key)
+	if !strings.Contains(strategies[0].label, "默认") {
+		t.Errorf("expected first to be default SSH, got: %s", strategies[0].label)
 	}
-	if !strings.Contains(strategies[0].url, "oauth2:mytoken@") {
-		t.Errorf("expected token in URL, got: %s", strategies[0].url)
+	// Second should be resource token
+	if !strings.Contains(strategies[1].label, "token") || !strings.Contains(strategies[1].label, "resource") {
+		t.Errorf("expected second to be resource token, got: %s", strategies[1].label)
+	}
+	if !strings.Contains(strategies[1].url, "oauth2:mytoken@") {
+		t.Errorf("expected token in URL, got: %s", strategies[1].url)
 	}
 }
 
@@ -377,6 +395,88 @@ func TestBuildAuthStrategies_Full6LevelChain(t *testing.T) {
 	}
 	if !strings.Contains(strategies[3].label, "HTTP") {
 		t.Errorf("strategy 3: expected HTTP, got: %s", strategies[3].label)
+	}
+}
+
+// --- New priority tests: default SSH before resource token ---
+
+func TestBuildAuthStrategies_GroupSSH_ResourceTokenOnly(t *testing.T) {
+	// group 有 SSH key + resource 有 token 时：group SSH → default SSH → resource token
+	opts := CloneOptions{
+		Token:          "res-token",
+		Provider:       "github",
+		SSHKey:         "/path/to/group-key",
+		HasGroupToken:  false,
+		HasGroupSSHKey: true,
+	}
+	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
+
+	// Expected: group SSH → default SSH → resource token → HTTP = 4
+	if len(strategies) != 4 {
+		t.Fatalf("expected 4 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
+	}
+	if !strings.Contains(strategies[0].label, "SSH key") || !strings.Contains(strategies[0].label, "group/repo") {
+		t.Errorf("strategy 0: expected group/repo SSH key, got: %s", strategies[0].label)
+	}
+	if !strings.Contains(strategies[1].label, "默认") {
+		t.Errorf("strategy 1: expected default SSH, got: %s", strategies[1].label)
+	}
+	if !strings.Contains(strategies[2].label, "token") || !strings.Contains(strategies[2].label, "resource") {
+		t.Errorf("strategy 2: expected resource token, got: %s", strategies[2].label)
+	}
+}
+
+func TestBuildAuthStrategies_GroupToken_ResourceSSHAndToken(t *testing.T) {
+	// group 有 token（无 SSH）+ resource 有 SSH + token 时：
+	// group token → resource SSH → default SSH → resource token
+	opts := CloneOptions{
+		Token:          "merged-token", // from group override
+		Provider:       "github",
+		SSHKey:         "/path/to/res-key", // from resource fallback
+		HasGroupToken:  true,
+		HasGroupSSHKey: false,
+	}
+	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
+
+	// Expected: group token → resource SSH → default SSH → HTTP = 4
+	// Note: resource token is skipped because HasGroupToken=true
+	if len(strategies) != 4 {
+		t.Fatalf("expected 4 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
+	}
+	if !strings.Contains(strategies[0].label, "token") || !strings.Contains(strategies[0].label, "group/repo") {
+		t.Errorf("strategy 0: expected group/repo token, got: %s", strategies[0].label)
+	}
+	if !strings.Contains(strategies[1].label, "SSH key") || !strings.Contains(strategies[1].label, "resource") {
+		t.Errorf("strategy 1: expected resource SSH key, got: %s", strategies[1].label)
+	}
+	if !strings.Contains(strategies[2].label, "默认") {
+		t.Errorf("strategy 2: expected default SSH, got: %s", strategies[2].label)
+	}
+	if !strings.Contains(strategies[3].label, "HTTP") {
+		t.Errorf("strategy 3: expected HTTP, got: %s", strategies[3].label)
+	}
+}
+
+func TestBuildAuthStrategies_DefaultSSHPriorToResourceToken(t *testing.T) {
+	// 仅 resource token（无 SSH key）时：default SSH → resource token
+	opts := CloneOptions{
+		Token:    "res-token",
+		Provider: "gitlab",
+	}
+	strategies := buildAuthStrategies("git@gitlab.com:org/repo.git", "https://gitlab.com/org/repo.git", opts)
+
+	// Expected: default SSH → resource token → HTTP = 3
+	if len(strategies) != 3 {
+		t.Fatalf("expected 3 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
+	}
+	if !strings.Contains(strategies[0].label, "默认") {
+		t.Errorf("strategy 0: expected default SSH, got: %s", strategies[0].label)
+	}
+	if !strings.Contains(strategies[1].label, "token") || !strings.Contains(strategies[1].label, "resource") {
+		t.Errorf("strategy 1: expected resource token, got: %s", strategies[1].label)
+	}
+	if !strings.Contains(strategies[2].label, "HTTP") {
+		t.Errorf("strategy 2: expected HTTP, got: %s", strategies[2].label)
 	}
 }
 
