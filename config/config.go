@@ -15,6 +15,17 @@ import (
 // envVarPattern matches ${VAR_NAME} placeholder syntax in token fields
 var envVarPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)}$`)
 
+// stripScheme 剥离 URL 中的 http:// 或 https:// 前缀，返回纯 host:port。
+// 非协议开头的字符串原样返回。
+func stripScheme(url string) string {
+	for _, scheme := range []string{"https://", "http://"} {
+		if strings.HasPrefix(url, scheme) {
+			return strings.TrimPrefix(url, scheme)
+		}
+	}
+	return url
+}
+
 // Config represents the top-level configuration file structure.
 type Config struct {
 	Base           string              `yaml:"base"`
@@ -32,6 +43,26 @@ type Resource struct {
 	URL      string `yaml:"url"`
 	Token    string `yaml:"token"`             // resolved at runtime; raw placeholder stored in Config.rawTokens
 	SSHKey   string `yaml:"ssh_key,omitempty"` // optional SSH key path for clone authentication
+}
+
+// APIURL 返回用于 provider API 调用的 HTTPS 地址：https://<host>
+func (r Resource) APIURL() string {
+	return "https://" + r.URL
+}
+
+// SSHURL 返回 SSH 克隆 URL：git@<host>:<path>.git
+func (r Resource) SSHURL(path string) string {
+	return "git@" + r.URL + ":" + path + ".git"
+}
+
+// HTTPSURL 返回 HTTPS 克隆 URL：https://<host>/<path>.git
+func (r Resource) HTTPSURL(path string) string {
+	return "https://" + r.URL + "/" + path + ".git"
+}
+
+// HTTPURL 返回 HTTP 克隆 URL：http://<host>/<path>.git
+func (r Resource) HTTPURL(path string) string {
+	return "http://" + r.URL + "/" + path + ".git"
 }
 
 // Group defines a remote group (GitLab group or GitHub org) whose repos are managed together.
@@ -211,11 +242,10 @@ func (c *Config) validate() error {
 		if res.URL == "" {
 			return fmt.Errorf("config: resource %q: 'url' field is required", name)
 		}
-		if !strings.HasPrefix(res.URL, "http://") && !strings.HasPrefix(res.URL, "https://") {
-			updated := res
-			updated.URL = "https://" + res.URL
-			c.Resources[name] = updated
-		}
+		// 统一转换为纯 host:port 格式（剥离协议前缀）
+		updated := res
+		updated.URL = stripScheme(res.URL)
+		c.Resources[name] = updated
 	}
 
 	// Validate group names are unique

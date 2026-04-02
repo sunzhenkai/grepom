@@ -52,8 +52,8 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 			localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
 			allRepos = append(allRepos, provider.Repo{
 				Name:           gr.Name,
-				CloneURL:       gr.URL,
-				SSHURL:         deriveSSHURL(gr.URL, res.Provider),
+				CloneURL:       res.HTTPSURL(gr.Path),
+				SSHURL:         deriveSSHURL(gr.Path, res.URL),
 				Path:           localPath,
 				Provider:       res.Provider,
 				Resource:       g.Resource,
@@ -87,10 +87,11 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 		}
 
 		localPath := config.ResolveRepoPath(r.cfg.Base, repo.LocalPath)
+		repoPath := extractRepoPath(repo.URL)
 		allRepos = append(allRepos, provider.Repo{
 			Name:           repo.Name,
-			CloneURL:       repo.URL,
-			SSHURL:         deriveSSHURL(repo.URL, res.Provider),
+			CloneURL:       res.HTTPSURL(repoPath),
+			SSHURL:         deriveSSHURL(repoPath, res.URL),
 			Path:           localPath,
 			Provider:       res.Provider,
 			Resource:       repo.Resource,
@@ -161,15 +162,41 @@ func FullPath(base string, r provider.Repo) string {
 	return filepath.Clean(r.Path)
 }
 
-// deriveSSHURL converts an HTTPS clone URL to SSH format based on provider.
-func deriveSSHURL(cloneURL, prov string) string {
-	switch prov {
-	case "gitlab", "github":
-		if strings.HasPrefix(cloneURL, "https://") {
-			return "git@" + strings.Replace(strings.TrimPrefix(cloneURL, "https://"), "/", ":", 1)
+// deriveSSHURL 从 host:port 和 repo path 推导 SSH URL。
+// 格式：git@<host>:<path>.git
+func deriveSSHURL(repoPath, host string) string {
+	return "git@" + host + ":" + repoPath + ".git"
+}
+
+// extractRepoPath 从克隆 URL 中提取 repo 路径部分。
+// 例如 "https://gitlab.com/me/dotfiles.git" → "me/dotfiles"
+// "git@gitlab.com:me/dotfiles.git" → "me/dotfiles"
+// "me/dotfiles.git" → "me/dotfiles"
+func extractRepoPath(cloneURL string) string {
+	// 去掉 .git 后缀
+	path := strings.TrimSuffix(cloneURL, ".git")
+
+	// 处理 https:// 或 http:// 前缀
+	for _, scheme := range []string{"https://", "http://"} {
+		if strings.HasPrefix(path, scheme) {
+			path = strings.TrimPrefix(path, scheme)
+			// 取第一个 / 之后的部分（去掉 host:port）
+			if idx := strings.Index(path, "/"); idx >= 0 {
+				return path[idx+1:]
+			}
+			return path
 		}
-		return cloneURL
-	default:
-		return cloneURL
 	}
+
+	// 处理 git@host:path 格式
+	if strings.HasPrefix(path, "git@") {
+		path = strings.TrimPrefix(path, "git@")
+		if idx := strings.Index(path, ":"); idx >= 0 {
+			return path[idx+1:]
+		}
+		return path
+	}
+
+	// 已经是纯路径格式
+	return path
 }

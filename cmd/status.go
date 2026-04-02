@@ -17,7 +17,7 @@ var (
 var statusCmd = &cobra.Command{
 	Use:   "status [name]",
 	Short: "Show git status for repositories",
-	Long:  "Show git status (branch, clean/dirty, ahead/behind) for cloned repositories.",
+	Long:  "Show git status summary and per-repo status for cloned repositories.",
 	Example: `  grepom status           # Status of all repos
   grepom status web-app    # Status of a specific repo
   grepom status --group frontend  # Status of repos in a group`,
@@ -47,37 +47,108 @@ var statusCmd = &cobra.Command{
 			return nil
 		}
 
+		// Collect status data for all repos
+		type repoStatus struct {
+			name     string
+			label    string // display status label (only highest priority)
+			fullPath string
+		}
+
+		var entries []repoStatus
+		counts := struct {
+			total, clean, dirty, ahead, behind, notCloned int
+		}{}
+
 		for _, r := range repos {
 			fullPath := repo.FullPath(cfg.Base, r)
-
 			st := gitpkg.GetStatus(fullPath)
 
 			if !st.Cloned {
-				fmt.Printf("%s: not cloned\n", r.Path)
+				counts.notCloned++
+				entries = append(entries, repoStatus{
+					name:     r.Name,
+					label:    "not cloned",
+					fullPath: fullPath,
+				})
 				continue
 			}
 
 			if st.NotARepo {
-				fmt.Printf("%s: not a git repository\n", r.Path)
+				// Treat not-a-repo as a special case; count as not cloned
+				counts.notCloned++
+				entries = append(entries, repoStatus{
+					name:     r.Name,
+					label:    "not a git repository",
+					fullPath: fullPath,
+				})
 				continue
 			}
 
-			parts := []string{st.Branch}
-
-			if st.Clean {
-				parts = append(parts, "clean")
+			// Determine status label by priority: dirty > ahead > behind > clean
+			var label string
+			if !st.Clean {
+				label = fmt.Sprintf("dirty (%d)", st.Dirty)
+				counts.dirty++
+			} else if st.Ahead > 0 {
+				label = fmt.Sprintf("ahead %d", st.Ahead)
+				counts.ahead++
+			} else if st.Behind > 0 {
+				label = fmt.Sprintf("behind %d", st.Behind)
+				counts.behind++
 			} else {
-				parts = append(parts, fmt.Sprintf("dirty (%d files)", st.Dirty))
+				label = "clean"
+				counts.clean++
 			}
 
-			if st.Ahead > 0 {
-				parts = append(parts, fmt.Sprintf("ahead %d", st.Ahead))
-			}
-			if st.Behind > 0 {
-				parts = append(parts, fmt.Sprintf("behind %d", st.Behind))
-			}
+			entries = append(entries, repoStatus{
+				name:     r.Name,
+				label:    label,
+				fullPath: fullPath,
+			})
+		}
 
-			fmt.Printf("%s: %s\n", r.Path, strings.Join(parts, ", "))
+		counts.total = len(repos)
+
+		// Print summary line
+		var parts []string
+		parts = append(parts, fmt.Sprintf("%d repos:", counts.total))
+		parts = append(parts, fmt.Sprintf("%d clean", counts.clean))
+		if counts.dirty > 0 {
+			parts = append(parts, fmt.Sprintf("%d dirty", counts.dirty))
+		}
+		if counts.ahead > 0 {
+			parts = append(parts, fmt.Sprintf("%d ahead", counts.ahead))
+		}
+		if counts.behind > 0 {
+			parts = append(parts, fmt.Sprintf("%d behind", counts.behind))
+		}
+		var summary strings.Builder
+		summary.WriteString(parts[0])
+		for _, p := range parts[1:] {
+			summary.WriteString(", ")
+			summary.WriteString(p)
+		}
+		if counts.notCloned > 0 {
+			fmt.Fprintf(&summary, " · %d not cloned", counts.notCloned)
+		}
+		fmt.Println(summary.String())
+
+		// Print repo list
+		fmt.Println()
+		// Calculate column widths
+		nameWidth := 0
+		labelWidth := 0
+		for _, e := range entries {
+			if len(e.name) > nameWidth {
+				nameWidth = len(e.name)
+			}
+			if len(e.label) > labelWidth {
+				labelWidth = len(e.label)
+			}
+		}
+
+		for _, e := range entries {
+			fmt.Printf("  %-*s   %-*s   %s\n", nameWidth, e.name, labelWidth, e.label, e.fullPath)
 		}
 
 		return nil

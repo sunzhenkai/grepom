@@ -767,9 +767,97 @@ func TestFindResource_NotFound(t *testing.T) {
 	}
 }
 
-// --- URL auto-prefix test ---
+// --- URL strip scheme tests ---
 
-func TestLoad_ResourceURLAutoHTTPS(t *testing.T) {
+func TestStripScheme_HTTPS(t *testing.T) {
+	result := stripScheme("https://gitlab.mycompany.com")
+	if result != "gitlab.mycompany.com" {
+		t.Errorf("expected gitlab.mycompany.com, got: %s", result)
+	}
+}
+
+func TestStripScheme_HTTP(t *testing.T) {
+	result := stripScheme("http://gitlab.mycompany.com:8080")
+	if result != "gitlab.mycompany.com:8080" {
+		t.Errorf("expected gitlab.mycompany.com:8080, got: %s", result)
+	}
+}
+
+func TestStripScheme_NoScheme(t *testing.T) {
+	result := stripScheme("gitlab.mycompany.com")
+	if result != "gitlab.mycompany.com" {
+		t.Errorf("expected gitlab.mycompany.com, got: %s", result)
+	}
+}
+
+func TestStripScheme_Empty(t *testing.T) {
+	result := stripScheme("")
+	if result != "" {
+		t.Errorf("expected empty, got: %s", result)
+	}
+}
+
+// --- Resource URL derivation tests ---
+
+func TestResource_APIURL(t *testing.T) {
+	r := Resource{URL: "gitlab.mycompany.com"}
+	if got := r.APIURL(); got != "https://gitlab.mycompany.com" {
+		t.Errorf("expected https://gitlab.mycompany.com, got: %s", got)
+	}
+}
+
+func TestResource_APIURL_WithPort(t *testing.T) {
+	r := Resource{URL: "gitlab.mycompany.com:8443"}
+	if got := r.APIURL(); got != "https://gitlab.mycompany.com:8443" {
+		t.Errorf("expected https://gitlab.mycompany.com:8443, got: %s", got)
+	}
+}
+
+func TestResource_SSHURL(t *testing.T) {
+	r := Resource{URL: "g.wii.pub"}
+	if got := r.SSHURL("my-org/my-repo"); got != "git@g.wii.pub:my-org/my-repo.git" {
+		t.Errorf("expected git@g.wii.pub:my-org/my-repo.git, got: %s", got)
+	}
+}
+
+func TestResource_SSHURL_WithPort(t *testing.T) {
+	r := Resource{URL: "g.wii.pub:8022"}
+	if got := r.SSHURL("my-org/my-repo"); got != "git@g.wii.pub:8022:my-org/my-repo.git" {
+		t.Errorf("expected git@g.wii.pub:8022:my-org/my-repo.git, got: %s", got)
+	}
+}
+
+func TestResource_HTTPSURL(t *testing.T) {
+	r := Resource{URL: "g.wii.pub"}
+	if got := r.HTTPSURL("my-org/my-repo"); got != "https://g.wii.pub/my-org/my-repo.git" {
+		t.Errorf("expected https://g.wii.pub/my-org/my-repo.git, got: %s", got)
+	}
+}
+
+func TestResource_HTTPSURL_WithPort(t *testing.T) {
+	r := Resource{URL: "g.wii.pub:8443"}
+	if got := r.HTTPSURL("my-org/my-repo"); got != "https://g.wii.pub:8443/my-org/my-repo.git" {
+		t.Errorf("expected https://g.wii.pub:8443/my-org/my-repo.git, got: %s", got)
+	}
+}
+
+func TestResource_HTTPURL(t *testing.T) {
+	r := Resource{URL: "g.wii.pub"}
+	if got := r.HTTPURL("my-org/my-repo"); got != "http://g.wii.pub/my-org/my-repo.git" {
+		t.Errorf("expected http://g.wii.pub/my-org/my-repo.git, got: %s", got)
+	}
+}
+
+func TestResource_HTTPURL_WithPort(t *testing.T) {
+	r := Resource{URL: "g.wii.pub:8080"}
+	if got := r.HTTPURL("my-org/my-repo"); got != "http://g.wii.pub:8080/my-org/my-repo.git" {
+		t.Errorf("expected http://g.wii.pub:8080/my-org/my-repo.git, got: %s", got)
+	}
+}
+
+// --- URL auto-prefix test (now strips scheme instead of adding) ---
+
+func TestLoad_ResourceURLStripsScheme(t *testing.T) {
 	content := `
 base: ~/projects
 resources:
@@ -791,7 +879,61 @@ groups:
 		t.Fatalf("Load failed: %v", err)
 	}
 	res := cfg.Resources["gl"]
-	if !strings.HasPrefix(res.URL, "https://") {
-		t.Errorf("expected URL to have https:// prefix, got: %s", res.URL)
+	if res.URL != "gitlab.mycompany.com" {
+		t.Errorf("expected host-only URL, got: %s", res.URL)
+	}
+}
+
+func TestLoad_ResourceURLStripsHTTPSPrefix(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.mycompany.com
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	res := cfg.Resources["gl"]
+	if res.URL != "gitlab.mycompany.com" {
+		t.Errorf("expected stripped URL, got: %s", res.URL)
+	}
+}
+
+func TestLoad_ResourceURLStripsHTTPPrefixWithPort(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: http://gitlab.mycompany.com:8080
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	res := cfg.Resources["gl"]
+	if res.URL != "gitlab.mycompany.com:8080" {
+		t.Errorf("expected stripped URL with port, got: %s", res.URL)
 	}
 }

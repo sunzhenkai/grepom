@@ -70,7 +70,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 			config.Verbose("syncing group %q (resource: %s, path: %s)", g.Name, g.Resource, g.Path)
 
 			params := provider.ListReposParams{
-				ServerURL: res.URL,
+				ServerURL: res.APIURL(),
 				Token:     res.Token,
 			}
 

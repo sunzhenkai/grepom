@@ -45,7 +45,7 @@ type authStrategy struct {
 
 // buildAuthStrategies builds an ordered list of clone strategies based on the
 // priority chain: group/repo SSH → group/repo token → resource SSH →
-// default SSH → resource token → bare HTTP.
+// default SSH → resource token.
 func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrategy {
 	var strategies []authStrategy
 
@@ -96,21 +96,12 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 		})
 	}
 
-	// 6. Bare HTTP
-	if httpURL != "" {
-		strategies = append(strategies, authStrategy{
-			label:  "HTTP 克隆",
-			url:    httpURL,
-			sshKey: "",
-		})
-	}
-
 	return strategies
 }
 
 // Clone clones a repository, creating parent directories as needed.
-// It tries authentication methods in priority order using the 6-level chain:
-// group/repo SSH → group/repo token → resource SSH → default SSH → resource token → HTTP.
+// It tries authentication methods in priority order using the 5-level chain:
+// group/repo SSH → group/repo token → resource SSH → default SSH → resource token.
 func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
@@ -124,7 +115,8 @@ func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 
 	total := len(strategies)
 	for i, s := range strategies {
-		fmt.Printf("  [%d/%d] 尝试 %s...\n", i+1, total, s.label)
+		displayURL := maskTokenURL(s.url)
+		fmt.Printf("  [%d/%d] 尝试 %s... %s\n", i+1, total, s.label, displayURL)
 
 		err := tryClone(path, s.url, s.sshKey)
 		if err == nil {
@@ -200,6 +192,24 @@ func sanitizeError(msg string) string {
 		msg = msg[:idx] + "<url redacted>" + rest[end:]
 	}
 	return msg
+}
+
+// maskTokenURL 将 token URL 中的 token 部分替换为 ***。
+// 例如 "https://oauth2:secret@gitlab.com/path.git" → "https://oauth2:***@gitlab.com/path.git"
+func maskTokenURL(url string) string {
+	// 匹配 https://<user>:<token>@ 格式
+	if idx := strings.Index(url, "://"); idx >= 0 {
+		rest := url[idx+3:]
+		if atIdx := strings.Index(rest, "@"); atIdx >= 0 {
+			// 找到 user:token 部分
+			credPart := rest[:atIdx]
+			if colonIdx := strings.Index(credPart, ":"); colonIdx >= 0 {
+				user := credPart[:colonIdx]
+				return url[:idx+3] + user + ":***@" + rest[atIdx+1:]
+			}
+		}
+	}
+	return url
 }
 
 // expandTilde expands ~/ to theuser's home directory.

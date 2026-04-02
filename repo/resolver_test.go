@@ -12,7 +12,7 @@ func TestResolve_GroupRepos(t *testing.T) {
 	cfg := &config.Config{
 		Base: "/home/user/projects",
 		Resources: map[string]config.Resource{
-			"work-gl": {Provider: "gitlab", URL: "https://gitlab.com", Token: "test"},
+			"work-gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
 		},
 		Groups: []config.Group{
 			{
@@ -53,6 +53,13 @@ func TestResolve_GroupRepos(t *testing.T) {
 	if r1.Provider != "gitlab" {
 		t.Errorf("expected provider 'gitlab', got: %s", r1.Provider)
 	}
+	// Verify URL derivation from host:port
+	if r1.CloneURL != "https://gitlab.com/my-org/frontend/app.git" {
+		t.Errorf("expected CloneURL https://gitlab.com/my-org/frontend/app.git, got: %s", r1.CloneURL)
+	}
+	if r1.SSHURL != "git@gitlab.com:my-org/frontend/app.git" {
+		t.Errorf("expected SSHURL git@gitlab.com:my-org/frontend/app.git, got: %s", r1.SSHURL)
+	}
 
 	// Check second repo (subgroup child)
 	r2 := repos[1]
@@ -69,7 +76,7 @@ func TestResolve_StandaloneRepos(t *testing.T) {
 	cfg := &config.Config{
 		Base: "/home/user/projects",
 		Resources: map[string]config.Resource{
-			"github": {Provider: "github", URL: "https://github.com", Token: "test"},
+			"github": {Provider: "github", URL: "github.com", Token: "test"},
 		},
 		Groups: []config.Group{},
 		Repos: []config.Repo{
@@ -98,13 +105,20 @@ func TestResolve_StandaloneRepos(t *testing.T) {
 	if r.GroupName != "" {
 		t.Errorf("standalone repo should have empty GroupName, got: %s", r.GroupName)
 	}
+	// Verify URL derivation
+	if r.CloneURL != "https://github.com/me/dotfiles.git" {
+		t.Errorf("expected CloneURL https://github.com/me/dotfiles.git, got: %s", r.CloneURL)
+	}
+	if r.SSHURL != "git@github.com:me/dotfiles.git" {
+		t.Errorf("expected SSHURL git@github.com:me/dotfiles.git, got: %s", r.SSHURL)
+	}
 }
 
 func TestResolveAndFilter_ByGroup(t *testing.T) {
 	cfg := &config.Config{
 		Base: "/home/user/projects",
 		Resources: map[string]config.Resource{
-			"gl": {Provider: "gitlab", URL: "https://gitlab.com", Token: "test"},
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
 		},
 		Groups: []config.Group{
 			{
@@ -141,7 +155,7 @@ func TestResolveAndFilter_ByResource(t *testing.T) {
 		Base: "/home/user/projects",
 		Resources: map[string]config.Resource{
 			"gl":   {Provider: "gitlab", URL: "https://gitlab.com", Token: "test"},
-			"ghub": {Provider: "github", URL: "https://github.com", Token: "test"},
+			"ghub": {Provider: "github", URL: "github.com", Token: "test"},
 		},
 		Groups: []config.Group{
 			{
@@ -198,26 +212,47 @@ func TestFullPath(t *testing.T) {
 	}
 }
 
-func TestDeriveSSHURL_GitLab(t *testing.T) {
-	result := deriveSSHURL("https://gitlab.com/org/repo.git", "gitlab")
+func TestDeriveSSHURL_FromHostAndPath(t *testing.T) {
+	result := deriveSSHURL("org/repo", "gitlab.com")
 	expected := "git@gitlab.com:org/repo.git"
 	if result != expected {
 		t.Errorf("expected %s, got %s", expected, result)
 	}
 }
 
-func TestDeriveSSHURL_GitHub(t *testing.T) {
-	result := deriveSSHURL("https://github.com/org/repo.git", "github")
-	expected := "git@github.com:org/repo.git"
+func TestDeriveSSHURL_WithPort(t *testing.T) {
+	result := deriveSSHURL("org/repo", "gitlab.com:8022")
+	expected := "git@gitlab.com:8022:org/repo.git"
 	if result != expected {
 		t.Errorf("expected %s, got %s", expected, result)
 	}
 }
 
-func TestDeriveSSHURL_AlreadySSH(t *testing.T) {
-	result := deriveSSHURL("git@gitlab.com:org/repo.git", "gitlab")
-	if result != "git@gitlab.com:org/repo.git" {
-		t.Errorf("SSH URL should be unchanged, got: %s", result)
+func TestExtractRepoPath_HTTPS(t *testing.T) {
+	result := extractRepoPath("https://gitlab.com/me/dotfiles.git")
+	if result != "me/dotfiles" {
+		t.Errorf("expected me/dotfiles, got %s", result)
+	}
+}
+
+func TestExtractRepoPath_SSH(t *testing.T) {
+	result := extractRepoPath("git@gitlab.com:me/dotfiles.git")
+	if result != "me/dotfiles" {
+		t.Errorf("expected me/dotfiles, got %s", result)
+	}
+}
+
+func TestExtractRepoPath_PlainPath(t *testing.T) {
+	result := extractRepoPath("me/dotfiles.git")
+	if result != "me/dotfiles" {
+		t.Errorf("expected me/dotfiles, got %s", result)
+	}
+}
+
+func TestExtractRepoPath_HTTPSWithPort(t *testing.T) {
+	result := extractRepoPath("https://gitlab.com:8443/me/dotfiles.git")
+	if result != "me/dotfiles" {
+		t.Errorf("expected me/dotfiles, got %s", result)
 	}
 }
 
@@ -296,7 +331,7 @@ func TestResolve_StandaloneRepoAuthOverridesResource(t *testing.T) {
 	cfg := &config.Config{
 		Base: "/home/user/projects",
 		Resources: map[string]config.Resource{
-			"gh": {Provider: "github", URL: "https://github.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
+			"gh": {Provider: "github", URL: "github.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
 		},
 		Repos: []config.Repo{
 			{
@@ -329,7 +364,7 @@ func TestResolve_StandaloneRepoFallsBackToResource(t *testing.T) {
 	cfg := &config.Config{
 		Base: "/home/user/projects",
 		Resources: map[string]config.Resource{
-			"gh": {Provider: "github", URL: "https://github.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
+			"gh": {Provider: "github", URL: "github.com", Token: "resource-token", SSHKey: "~/.ssh/id_resource"},
 		},
 		Repos: []config.Repo{
 			{
