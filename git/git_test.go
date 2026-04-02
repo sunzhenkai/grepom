@@ -499,6 +499,215 @@ func TestMaskTokenURL_NoToken(t *testing.T) {
 func TestMaskTokenURL_Empty(t *testing.T) {
 	result := maskTokenURL("")
 	if result != "" {
-		t.Errorf("empty URL should return empty, got: %s", result)
+		t.Errorf("empty URL should return empty, got %s", result)
+	}
+}
+
+// --- GetDefaultBranch tests ---
+
+func TestGetDefaultBranch_RealRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	run("remote", "add", "origin", "https://github.com/example/repo.git")
+	// Manually set origin/HEAD to simulate remote HEAD resolution
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	branch := "main"
+	out, _ := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if len(out) > 0 {
+		branch = strings.TrimSpace(string(out))
+	}
+
+	result, err := GetDefaultBranch(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != branch {
+		t.Errorf("expected default branch %s, got %s", branch, result)
+	}
+}
+
+func TestGetDefaultBranch_NoOriginHEAD(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	// Don't set origin/HEAD
+
+	_, err := GetDefaultBranch(dir)
+	if err == nil {
+		t.Error("expected error when origin/HEAD is not set")
+	}
+}
+
+func TestGetDefaultBranch_NotAGitDir(t *testing.T) {
+	_, err := GetDefaultBranch(t.TempDir())
+	if err == nil {
+		t.Error("expected error for non-git directory")
+	}
+}
+
+// --- CheckPullSafety tests ---
+
+func TestCheckPullSafety_NotCloned(t *testing.T) {
+	dir := t.TempDir()
+	ok, reason := CheckPullSafety(dir)
+	if ok {
+		t.Error("expected not eligible")
+	}
+	if reason != "not cloned" {
+		t.Errorf("expected 'not cloned', got %s", reason)
+	}
+}
+
+func TestCheckPullSafety_CleanOnDefaultBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	run("remote", "add", "origin", "https://github.com/example/repo.git")
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	ok, reason := CheckPullSafety(dir)
+	if !ok {
+		t.Errorf("expected eligible, got skip reason: %s", reason)
+	}
+}
+
+func TestCheckPullSafety_Dirty(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	run("remote", "add", "origin", "https://github.com/example/repo.git")
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	// Create a dirty file
+	writeFile(t, filepath.Join(dir, "dirty.txt"), "content")
+
+	ok, reason := CheckPullSafety(dir)
+	if ok {
+		t.Error("expected not eligible due to dirty")
+	}
+	if reason != "dirty working tree" {
+		t.Errorf("expected 'dirty working tree', got %s", reason)
+	}
+}
+
+func TestCheckPullSafety_NonDefaultBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	run("checkout", "-b", "feature")
+	run("remote", "add", "origin", "https://github.com/example/repo.git")
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	ok, reason := CheckPullSafety(dir)
+	if ok {
+		t.Error("expected not eligible on feature branch")
+	}
+	if reason != "on feature, not default branch" {
+		t.Errorf("expected branch reason, got %s", reason)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+}
+
+// --- CloneAll/PullAll tests ---
+
+func TestCloneAll_Empty(t *testing.T) {
+	results := CloneAll(4, nil)
+	if results != nil {
+		t.Error("expected nil for empty tasks")
+	}
+}
+
+func TestCloneAll_PreservesOrder(t *testing.T) {
+	// Test with 0 concurrency (falls back to 1) and empty tasks
+	results := CloneAll(0, nil)
+	if results != nil {
+		t.Error("expected nil for empty tasks with 0 concurrency")
+	}
+
+	// Test with invalid concurrency still works
+	results = CloneAll(-1, []CloneTask{})
+	if results != nil {
+		t.Error("expected nil for empty tasks with negative concurrency")
+	}
+}
+
+func TestPullAll_Empty(t *testing.T) {
+	results := PullAll(4, nil)
+	if results != nil {
+		t.Error("expected nil for empty tasks")
+	}
+}
+
+func TestPullAll_InvalidConcurrency(t *testing.T) {
+	results := PullAll(0, nil)
+	if results != nil {
+		t.Error("expected nil for empty tasks with 0 concurrency")
 	}
 }

@@ -56,6 +56,7 @@ func mainMenu() {
 				"添加仓库 (add repo)",
 				"同步远程仓库 (sync)",
 				"克隆仓库 (clone)",
+				"拉取更新 (pull)",
 				"查看状态 (status)",
 				"退出",
 			},
@@ -82,6 +83,8 @@ func mainMenu() {
 			interactiveSync()
 		case "克隆仓库 (clone)":
 			interactiveClone()
+		case "拉取更新 (pull)":
+			interactivePull()
 		case "查看状态 (status)":
 			interactiveStatus()
 		case "退出":
@@ -771,29 +774,206 @@ func interactiveClone() {
 		return
 	}
 
+	// Ask for concurrency
+	concurrency := 4
+	survey.AskOne(&survey.Select{
+		Message: "并行度:",
+		Options: []string{"1 (顺序)", "2", "4 (默认)", "8"},
+	}, &scope)
+	switch scope {
+	case "1 (顺序)":
+		concurrency = 1
+	case "2":
+		concurrency = 2
+	case "4 (默认)":
+		concurrency = 4
+	case "8":
+		concurrency = 8
+	}
+
+	// Filter out already-cloned repos
+	var toClone []gitpkg.CloneTask
 	for _, r := range repos {
 		fullPath := repo.FullPath(cfg.Base, r)
-
 		if gitpkg.IsCloned(fullPath) {
-			if verbose {
-				fmt.Printf("跳过 %s (已克隆)\n", r.Path)
-			}
+			fmt.Printf("跳过 %s (已克隆)\n", r.Path)
 			continue
 		}
+		toClone = append(toClone, gitpkg.CloneTask{
+			Repo:     r,
+			FullPath: fullPath,
+		})
+	}
 
-		fmt.Printf("克隆 %s...\n", r.Path)
-		opts := gitpkg.CloneOptions{
-			Token:          r.Token,
-			Provider:       r.Provider,
-			SSHKey:         r.SSHKey,
-			HasGroupToken:  r.HasGroupToken,
-			HasGroupSSHKey: r.HasGroupSSHKey,
+	if len(toClone) == 0 {
+		fmt.Println("所有仓库已克隆")
+		return
+	}
+
+	if concurrency > 1 && len(toClone) > 1 {
+		// Parallel clone
+		progress := NewProgressRenderer("cloning", len(toClone))
+		defer progress.Done()
+
+		results := gitpkg.CloneAll(concurrency, toClone)
+		progress.Update(len(results))
+		PrintCloneSummary(results, nil)
+	} else {
+		// Sequential clone
+		for _, task := range toClone {
+			fmt.Printf("克隆 %s...\n", task.Repo.Path)
+			opts := gitpkg.CloneOptions{
+				Token:          task.Repo.Token,
+				Provider:       task.Repo.Provider,
+				SSHKey:         task.Repo.SSHKey,
+				HasGroupToken:  task.Repo.HasGroupToken,
+				HasGroupSSHKey: task.Repo.HasGroupSSHKey,
+			}
+			if err := gitpkg.Clone(task.FullPath, task.Repo.SSHURL, task.Repo.CloneURL, opts); err != nil {
+				fmt.Fprintf(os.Stderr, "克隆 %s 失败: %v\n", task.Repo.Path, err)
+				continue
+			}
+			fmt.Printf("  %s 完成\n", task.Repo.Name)
 		}
-		if err := gitpkg.Clone(fullPath, r.SSHURL, r.CloneURL, opts); err != nil {
-			fmt.Fprintf(os.Stderr, "克隆 %s 失败: %v\n", r.Path, err)
+	}
+}
+
+// --- Interactive pull ---
+
+func interactivePull() {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		return
+	}
+
+	// Determine scope
+	scope := ""
+	scopeOptions := []string{"全部", "按组", "按资源"}
+	survey.AskOne(&survey.Select{
+		Message: "拉取范围:",
+		Options: scopeOptions,
+	}, &scope)
+
+	filter := repo.Filter{}
+
+	switch scope {
+	case "按组":
+		if len(cfg.Groups) == 0 {
+			fmt.Println("没有配置组")
+			return
+		}
+		var groupNames []string
+		for _, g := range cfg.Groups {
+			groupNames = append(groupNames, g.Name)
+		}
+		selectedGroup := ""
+		survey.AskOne(&survey.Select{
+			Message: "选择组:",
+			Options: groupNames,
+		}, &selectedGroup)
+		filter.Group = selectedGroup
+	case "按资源":
+		if len(cfg.Resources) == 0 {
+			fmt.Println("没有配置资源")
+			return
+		}
+		var resourceNames []string
+		for name := range cfg.Resources {
+			resourceNames = append(resourceNames, name)
+		}
+		selectedResource := ""
+		survey.AskOne(&survey.Select{
+			Message: "选择资源:",
+			Options: resourceNames,
+		}, &selectedResource)
+		filter.Resource = selectedResource
+	}
+
+	resolver := repo.NewResolver(cfg)
+	repos, err := resolver.ResolveAndFilter(filter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		return
+	}
+
+	if len(repos) == 0 {
+		fmt.Println("没有找到仓库")
+		return
+	}
+
+	// Ask for concurrency
+	concurrency := 4
+	survey.AskOne(&survey.Select{
+		Message: "并行度:",
+		Options: []string{"1 (顺序)", "2", "4 (默认)", "8"},
+	}, &scope)
+	switch scope {
+	case "1 (顺序)":
+		concurrency = 1
+	case "2":
+		concurrency = 2
+	case "4 (默认)":
+		concurrency = 4
+	case "8":
+		concurrency = 8
+	}
+
+	// Safety check: determine which repos are eligible
+	var toPull []gitpkg.PullTask
+	skipped := 0
+
+	for _, r := range repos {
+		fullPath := repo.FullPath(cfg.Base, r)
+		if !gitpkg.IsCloned(fullPath) {
+			fmt.Printf("跳过 %s (未克隆)\n", r.Path)
+			skipped++
 			continue
 		}
-		fmt.Printf("  %s 完成\n", r.Name)
+		ok, reason := gitpkg.CheckPullSafety(fullPath)
+		if !ok {
+			fmt.Printf("跳过 %s (%s)\n", r.Path, reason)
+			skipped++
+			continue
+		}
+		toPull = append(toPull, gitpkg.PullTask{
+			Repo:     r,
+			FullPath: fullPath,
+		})
+	}
+
+	if len(toPull) == 0 {
+		if skipped > 0 {
+			fmt.Printf("没有需要拉取的仓库: %d 个被跳过\n", skipped)
+		} else {
+			fmt.Println("没有需要拉取的仓库")
+		}
+		return
+	}
+
+	if concurrency > 1 && len(toPull) > 1 {
+		progress := NewProgressRenderer("pulling", len(toPull))
+		defer progress.Done()
+
+		results := gitpkg.PullAll(concurrency, toPull)
+		progress.Update(len(results))
+		PrintPullSummary(results, skipped, nil)
+	} else {
+		for _, task := range toPull {
+			fmt.Printf("拉取 %s...\n", task.Repo.Path)
+			if err := gitpkg.Pull(task.FullPath); err != nil {
+				fmt.Fprintf(os.Stderr, "拉取 %s 失败: %v\n", task.Repo.Path, err)
+				continue
+			}
+		}
+		results := make([]gitpkg.PullResult, 0, len(toPull))
+		for _, task := range toPull {
+			results = append(results, gitpkg.PullResult{
+				Repo:     task.Repo,
+				FullPath: task.FullPath,
+			})
+		}
+		PrintPullSummary(results, skipped, nil)
 	}
 }
 

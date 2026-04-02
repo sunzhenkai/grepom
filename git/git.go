@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,11 @@ type CloneOptions struct {
 	// Source tracking for 6-level auth priority chain
 	HasGroupToken  bool // true if token was set at group/repo level
 	HasGroupSSHKey bool // true if ssh_key was set at group/repo level
+
+	// LogWriter controls where clone attempt logs are written.
+	// When nil, logs are written to stdout via fmt.Printf (backward compatible).
+	// When set (e.g. &bytes.Buffer{}), logs are written there for collection.
+	LogWriter io.Writer
 }
 
 // authStrategy represents a single clone authentication method to try.
@@ -113,20 +119,21 @@ func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 		return fmt.Errorf("no clone URL available")
 	}
 
+	w := opts.LogWriter
 	total := len(strategies)
 	for i, s := range strategies {
 		displayURL := maskTokenURL(s.url)
-		fmt.Printf("  [%d/%d] 尝试 %s... %s\n", i+1, total, s.label, displayURL)
+		logf(w, "  [%d/%d] 尝试 %s... %s\n", i+1, total, s.label, displayURL)
 
 		err := tryClone(path, s.url, s.sshKey)
 		if err == nil {
-			fmt.Printf("  [%d/%d] 成功\n", i+1, total)
+			logf(w, "  [%d/%d] 成功\n", i+1, total)
 			return nil
 		}
 
 		// Sanitize error message (remove any embedded token/URL)
 		errMsg := sanitizeError(err.Error())
-		fmt.Printf("  [%d/%d] 失败: %s\n", i+1, total, errMsg)
+		logf(w, "  [%d/%d] 失败: %s\n", i+1, total, errMsg)
 
 		// Clean up failed attempt
 		os.RemoveAll(path)
@@ -134,6 +141,15 @@ func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 	}
 
 	return fmt.Errorf("所有认证方式均失败")
+}
+
+// logf writes to w if non-nil, otherwise to stdout via fmt.Printf.
+func logf(w io.Writer, format string, args ...interface{}) {
+	if w != nil {
+		fmt.Fprintf(w, format, args...)
+	} else {
+		fmt.Printf(format, args...)
+	}
 }
 
 // tryClone attempts a single git clone with the given URL and optional SSH key.
@@ -232,6 +248,24 @@ func Pull(path string) error {
 		return fmt.Errorf("git pull: %w", err)
 	}
 	return nil
+}
+
+// GetDefaultBranch returns the short name of the default branch (the one origin/HEAD points to).
+// Returns an error if the repo doesn't exist or origin/HEAD is not set.
+func GetDefaultBranch(path string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "symbolic-ref", "refs/remotes/origin/HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("无法检测默认分支: %w", err)
+	}
+
+	// Output is like "refs/remotes/origin/main\n", extract "main"
+	ref := strings.TrimSpace(string(out))
+	const prefix = "refs/remotes/origin/"
+	if !strings.HasPrefix(ref, prefix) {
+		return "", fmt.Errorf("unexpected symbolic-ref format: %s", ref)
+	}
+	return strings.TrimPrefix(ref, prefix), nil
 }
 
 // GetStatus parses git status output and returns structured status info.
