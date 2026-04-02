@@ -72,26 +72,30 @@
 
 ### Requirement: 克隆认证优先级链
 系统 SHALL 按以下优先级依次尝试克隆，前一种方式成功即停止：
-1. group/repo 级别 token（HTTPS + token URL）
-2. group/repo 级别 SSH key（SSH + 指定 key）
-3. resource 级别 token（HTTPS + token URL）
-4. resource 级别 SSH key（SSH + 指定 key）
+1. group/repo 级别 SSH key（SSH + 指定 key）
+2. group/repo 级别 token（HTTPS + token URL）
+3. resource 级别 SSH key（SSH + 指定 key）
+4. resource 级别 token（HTTPS + token URL）
 5. 推导的 SSH URL（系统默认 SSH）
 6. 裸 HTTP URL
 
 未配置的级别 SHALL 被跳过，不产生延迟。
 
-#### Scenario: group/repo 级别 token 优先
-- **WHEN** group 或 repo 配置了 token，同时 resource 也有 token
-- **THEN** 系统优先使用 group/repo 级别的 token 进行 clone
+#### Scenario: group/repo 级别 SSH key 最优先
+- **WHEN** group 或 repo 配置了 ssh_key，同时也有 token 和 resource 认证
+- **THEN** 系统优先使用 group/repo 级别的 SSH key 进行 clone
 
-#### Scenario: group/repo 级别 SSH key
-- **WHEN** group 或 repo 配置了 ssh_key（但未配置 token），且 resource 有 token
-- **THEN** 系统优先尝试 resource token 认证；若失败后使用 group/repo 的 SSH key
+#### Scenario: group/repo 级别 token 作为二级回退
+- **WHEN** group 或 repo 配置了 token 但未配置 ssh_key，同时 resource 也有 ssh_key 和 token
+- **THEN** 系统优先尝试 group/repo 级别的 token 认证；若失败后使用 resource 的 SSH key
 
-#### Scenario: resource 级别 SSH key 作为回退
-- **WHEN** group/repo 未配置 ssh_key，但 resource 配置了 ssh_key 和 token
-- **THEN** 系统先尝试 resource token，若失败后使用 resource 的 SSH key
+#### Scenario: resource SSH key 优先于 resource token
+- **WHEN** group/repo 未配置任何认证，resource 同时配置了 ssh_key 和 token
+- **THEN** 系统先尝试 resource 的 SSH key 认证，若失败后使用 resource 的 token
+
+#### Scenario: resource SSH key 作为回退
+- **WHEN** group/repo 未配置 ssh_key，但 resource 配置了 ssh_key 和 token，且 token 认证失败
+- **THEN** 系统使用 resource 的 SSH key 尝试 SSH clone
 
 #### Scenario: 所有方式均失败
 - **WHEN** 所有认证方式均 clone 失败

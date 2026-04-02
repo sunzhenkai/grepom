@@ -5,22 +5,23 @@ The system SHALL provide a root command `grepom` with the following global flags
 
 The system SHALL also provide the following subcommands:
 - `init`: initialize configuration file
-- `clone`: clone repositories（使用 6 级认证优先级链，输出认证尝试日志）
+- `clone`: clone repositories（使用 6 级认证优先级链，SSH 优先，输出认证尝试日志）
 - `list`: list discovered repositories
 - `status`: show git status
 - `pull`: pull updates
 - `add`: add resource, group, or repository
 - `sync`: synchronize repository metadata from groups (does NOT clone or pull)
+- `search`: search repositories by name (substring match)
 - `interactive`: 进入交互式操作模式
 
 #### Scenario: Show help
 - **WHEN** user runs `grepom --help`
-- **THEN** the system displays available commands including `interactive` and global flags
+- **THEN** the system displays available commands including `search` and `interactive` and global flags
 
 ### Requirement: clone command
 系统 SHALL 提供 `grepom clone` 命令，将仓库 clone 到本地文件系统。Group 内 repo 的目标路径通过路径推导公式计算。独立 repo 使用其 local_path。
 
-clone 认证优先级链（6 级）：group/repo token → group/repo SSH key → resource token → resource SSH key → 推导 SSH → 裸 HTTP。
+clone 认证优先级链（6 级，SSH 优先）：group/repo SSH key → group/repo token → resource SSH key → resource token → 推导 SSH → 裸 HTTP。
 
 clone 过程中 SHALL 输出每种认证方式的尝试日志。
 
@@ -40,13 +41,9 @@ clone 过程中 SHALL 输出每种认证方式的尝试日志。
 - **WHEN** 目标目录已包含 git 仓库
 - **THEN** 系统跳过 clone 并打印提示（非错误）
 
-#### Scenario: 使用 group 级别 token 克隆
-- **WHEN** group 配置了 token
-- **THEN** 系统优先使用 group token 构建 HTTPS 认证 URL 进行 clone
-
-#### Scenario: 使用 resource SSH key 作为回退
-- **WHEN** resource token 认证失败，且 resource 配置了 ssh_key
-- **THEN** 系统使用 resource 的 SSH key 尝试 SSH clone
+#### Scenario: 使用 group 级别 SSH key 克隆（最高优先级）
+- **WHEN** group 配置了 ssh_key
+- **THEN** 系统优先使用 group 的 SSH key 进行 SSH clone
 
 #### Scenario: 认证尝试日志输出
 - **WHEN** clone 过程中尝试某种认证方式
@@ -160,3 +157,43 @@ The system SHALL provide a `grepom add` command with three subcommands:
 #### Scenario: interactive 命令与 config 标志兼容
 - **WHEN** 用户运行 `grepom -c custom.yml interactive`
 - **THEN** 交互模式使用 `custom.yml` 作为配置文件路径
+
+### Requirement: search 命令
+系统 SHALL 提供 `grepom search <keyword>` 命令，按名称模糊搜索仓库。搜索使用大小写不敏感的子串匹配。
+
+#### Scenario: 搜索匹配的仓库
+- **WHEN** 用户运行 `grepom search web`
+- **THEN** 系统显示所有名称包含 "web"（大小写不敏感）的仓库，包括 group 内 repo 和 standalone repo
+
+#### Scenario: 搜索无匹配结果
+- **WHEN** 用户运行 `grepom search xyz`
+- **THEN** 系统输出 "no matching repos found"
+
+#### Scenario: 搜索关键字为空
+- **WHEN** 用户运行 `grepom search`（无参数）
+- **THEN** 系统报错提示需要提供搜索关键字
+
+### Requirement: search 结合 group 过滤器
+`search` 命令 SHALL 支持 `--group` 过滤器，仅在指定 group 的范围内搜索仓库。
+
+#### Scenario: 在指定 group 内搜索
+- **WHEN** 用户运行 `grepom search web --group frontend`
+- **THEN** 系统仅在 group `frontend` 的 repos 中搜索名称包含 "web" 的仓库
+
+#### Scenario: 指定的 group 不存在
+- **WHEN** 用户运行 `grepom search web --group nonexistent`
+- **THEN** 系统输出 "no matching repos found"
+
+### Requirement: search 结合 resource 过滤器
+`search` 命令 SHALL 支持 `--resource` 过滤器，仅在引用指定 resource 的仓库中搜索。
+
+#### Scenario: 在指定 resource 范围内搜索
+- **WHEN** 用户运行 `grepom search web --resource work-gl`
+- **THEN** 系统仅在引用 resource `work-gl` 的仓库中搜索名称包含 "web" 的仓库
+
+### Requirement: search 输出格式
+`search` 命令的输出格式 SHALL 与 `list` 命令保持一致，以表格形式显示仓库名称、路径、group、resource 和克隆状态。
+
+#### Scenario: search 输出包含完整信息
+- **WHEN** 用户运行 `grepom search web` 且找到匹配仓库
+- **THEN** 输出包含仓库名称、本地路径、所属 group、关联 resource 和克隆状态，格式与 `grepom list` 一致
