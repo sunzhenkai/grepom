@@ -1,5 +1,5 @@
 ### Requirement: Group 顶层定义
-系统 SHALL 支持在配置文件的 `groups` 字段下定义顶层 group 列表。每个 group 包含 `name`（唯一标识）、`resource`（引用的认证资源）、`path`（远端 group path）和 `local_path`（本地映射根路径）。`groups` 使用 YAML 数组格式。
+系统 SHALL 支持在配置文件的 `groups` 字段下定义顶层 group 列表。每个 group 包含 `name`（唯一标识）、`resource`（引用的认证资源）、`path`（远端 group path）和 `local_path`（本地映射根路径）。Group SHALL 支持 `enabled` 布尔字段（默认 `true`）和 `exclude_repos` 字符串数组字段（默认为空）。`groups` 使用 YAML 数组格式。
 
 #### Scenario: 定义 GitLab group
 - **WHEN** 配置文件中 `groups` 包含 `{name: frontend, resource: work-gl, path: my-org/frontend, local_path: ./frontend, recursive: true}`
@@ -24,6 +24,14 @@
 #### Scenario: Group path 必填
 - **WHEN** 配置文件中某 group 缺少 `path` 字段
 - **THEN** 系统 SHALL 在加载配置时报错
+
+#### Scenario: 定义禁用的 Group
+- **WHEN** 配置文件中 group 设置 `enabled: false`
+- **THEN** 系统正常加载该 group 配置，但运行时排除该 group 下所有 repo
+
+#### Scenario: 定义带 exclude_repos 的 Group
+- **WHEN** 配置文件中 group 设置 `exclude_repos: [deprecated-app, temp-repo]`
+- **THEN** 系统正常加载该 group 配置，但运行时排除 `exclude_repos` 中列出的 repo
 
 ### Requirement: Group local_path 字段
 Group 的 `local_path` 字段指定该 group 在本地的映射根路径，相对于配置文件的 `base` 字段。如果省略，默认使用 group name 作为 local_path。

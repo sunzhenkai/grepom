@@ -1,5 +1,5 @@
 ### Requirement: Resource 定义认证和连接信息
-系统 SHALL 支持在配置文件的 `resources` 字段下定义命名资源。每个资源包含 `provider`（gitlab 或 github）、`url`（仅 host，可选 port）和 `token`（认证令牌）。`url` 字段仅需填写 host 地址（如 `g.wii.pub` 或 `g.wii.pub:8080`），无需包含协议前缀。`resources` 使用 YAML map 格式，key 为资源名称。
+系统 SHALL 支持在配置文件的 `resources` 字段下定义命名资源。每个资源包含 `provider`（gitlab 或 github）、`url`（仅 host，可选 port）和 `token`（认证令牌）。Resource SHALL 支持 `enabled` 布尔字段（默认 `true`）。`url` 字段仅需填写 host 地址（如 `g.wii.pub` 或 `g.wii.pub:8080`），无需包含协议前缀。`resources` 使用 YAML map 格式，key 为资源名称。
 
 #### Scenario: 定义 GitLab 资源（仅 host）
 - **WHEN** 配置文件中 `resources` 下存在 `work-gl: {provider: gitlab, url: g.wii.pub, token: ${GITLAB_TOKEN}}`
@@ -32,6 +32,10 @@
 #### Scenario: resource 的 url 自动剥离 http 前缀
 - **WHEN** 配置文件中某 resource 的 `url` 为 `http://g.wii.pub:8080`（含 http 前缀和端口）
 - **THEN** 系统自动剥离前缀，存储为 `g.wii.pub:8080`
+
+#### Scenario: 定义禁用的 Resource
+- **WHEN** 配置文件中 resource 设置 `enabled: false`
+- **THEN** 系统正常加载该 resource 配置，但运行时排除该 resource 下所有 group 和独立 repo
 
 ### Requirement: Group 引用 Resource 获取认证
 Group 和独立 repo 通过 `resource` 字段引用已定义的资源名称，获取 provider 类型、host 和 token。
