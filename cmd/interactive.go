@@ -815,8 +815,9 @@ func interactiveClone() {
 		progress := NewProgressRenderer("cloning", len(toClone))
 		defer progress.Done()
 
-		results := gitpkg.CloneAll(concurrency, toClone)
-		progress.Update(len(results))
+		results := gitpkg.CloneAll(concurrency, toClone, func(completed, total int) {
+			progress.Update(completed)
+		})
 		PrintCloneSummary(results, nil)
 	} else {
 		// Sequential clone
@@ -955,8 +956,9 @@ func interactivePull() {
 		progress := NewProgressRenderer("pulling", len(toPull))
 		defer progress.Done()
 
-		results := gitpkg.PullAll(concurrency, toPull)
-		progress.Update(len(results))
+		results := gitpkg.PullAll(concurrency, toPull, func(completed, total int) {
+			progress.Update(completed)
+		})
 		PrintPullSummary(results, skipped, nil)
 	} else {
 		for _, task := range toPull {

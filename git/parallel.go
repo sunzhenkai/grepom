@@ -8,6 +8,10 @@ import (
 	"github.com/wii/grepom/provider"
 )
 
+// ProgressFunc is called each time a parallel task completes.
+// completed is the number of tasks done so far, total is the total task count.
+type ProgressFunc func(completed, total int)
+
 // CloneTask represents a single clone operation to be executed.
 type CloneTask struct {
 	Repo     provider.Repo
@@ -24,7 +28,8 @@ type CloneResult struct {
 
 // CloneAll clones multiple repositories in parallel using a worker pool.
 // concurrency controls the number of parallel workers (must be >= 1).
-func CloneAll(concurrency int, tasks []CloneTask) []CloneResult {
+// onProgress is called after each repository clone completes (may be nil).
+func CloneAll(concurrency int, tasks []CloneTask, onProgress ProgressFunc) []CloneResult {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -75,10 +80,15 @@ func CloneAll(concurrency int, tasks []CloneTask) []CloneResult {
 		close(results)
 	}()
 
-	// Collect results preserving order
+	// Collect results preserving order, invoke progress callback
 	resultMap := make(map[string]CloneResult, len(tasks))
+	completed := 0
 	for r := range results {
 		resultMap[r.FullPath] = r
+		completed++
+		if onProgress != nil {
+			onProgress(completed, len(tasks))
+		}
 	}
 
 	ordered := make([]CloneResult, 0, len(tasks))
@@ -105,7 +115,8 @@ type PullResult struct {
 
 // PullAll pulls multiple repositories in parallel using a worker pool.
 // concurrency controls the number of parallel workers (must be >= 1).
-func PullAll(concurrency int, tasks []PullTask) []PullResult {
+// onProgress is called after each repository pull completes (may be nil).
+func PullAll(concurrency int, tasks []PullTask, onProgress ProgressFunc) []PullResult {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -146,10 +157,15 @@ func PullAll(concurrency int, tasks []PullTask) []PullResult {
 		close(results)
 	}()
 
-	// Collect results preserving order
+	// Collect results preserving order, invoke progress callback
 	resultMap := make(map[string]PullResult, len(tasks))
+	completed := 0
 	for r := range results {
 		resultMap[r.FullPath] = r
+		completed++
+		if onProgress != nil {
+			onProgress(completed, len(tasks))
+		}
 	}
 
 	ordered := make([]PullResult, 0, len(tasks))

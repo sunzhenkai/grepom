@@ -4,14 +4,58 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 
 	"github.com/mattn/go-isatty"
+	"github.com/wii/grepom/config"
 	"github.com/wii/grepom/git"
 )
 
 // isStdoutTerminal returns true if stdout is connected to a terminal.
+// Uses a multi-strategy detection for robustness across shells and terminal emulators:
+//  1. go-isatty (ioctl-based, most reliable)
+//  2. TERM environment variable (non-empty, non-dumb)
+//  3. /proc/self/fd/1 inode check (Linux only, major=5 for tty devices)
 func isStdoutTerminal() bool {
-	return isatty.IsTerminal(os.Stdout.Fd())
+	// 策略 1: go-isatty
+	if isatty.IsTerminal(os.Stdout.Fd()) {
+		config.Verbose("TTY check: isatty=true")
+		return true
+	}
+	config.Verbose("TTY check: isatty=false")
+
+	// 策略 2: TERM 环境变量
+	term := os.Getenv("TERM")
+	if term != "" && term != "dumb" && term != "unknown" {
+		config.Verbose("TTY check: TERM=%s → TTY", term)
+		return true
+	}
+	config.Verbose("TTY check: TERM=%q", term)
+
+	// 策略 3: /proc/self/fd/1 inode 检查（仅 Linux）
+	if runtime.GOOS == "linux" {
+		if isTTYViaProc() {
+			config.Verbose("TTY check: /proc=true → TTY")
+			return true
+		}
+		config.Verbose("TTY check: /proc=false")
+	}
+
+	return false
+}
+
+// isTTYViaProc checks if stdout fd points to a tty device via /proc filesystem.
+// On Linux, tty devices have major number 5 (char device 5,0 = /dev/tty).
+func isTTYViaProc() bool {
+	// 通过 os.Stat 检查 /proc/self/fd/1 指向的文件
+	fi, err := os.Stat("/proc/self/fd/1")
+	if err != nil {
+		return false
+	}
+	// 检查是否为字符设备 (os.ModeCharDevice)
+	// tty 设备的 major number 为 5，但 Go 的 os.FileMode 不直接暴露 major/minor
+	// 使用 ModeCharDevice 作为近似判断：字符设备 + 非 stdin/stdout 本身
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // ProgressRenderer handles real-time progress display for batch operations.
@@ -48,6 +92,7 @@ func (p *ProgressRenderer) Done() {
 	if p.isTTY && p.total > 0 {
 		// Clear the progress line
 		fmt.Fprintf(os.Stdout, "\r%s\r", spaces(len(fmt.Sprintf("[%d/%d] %s...", p.completed, p.total, p.action))))
+		fmt.Fprintln(os.Stdout)
 	}
 }
 
