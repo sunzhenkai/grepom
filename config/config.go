@@ -43,6 +43,12 @@ type Resource struct {
 	URL      string `yaml:"url"`
 	Token    string `yaml:"token"`             // resolved at runtime; raw placeholder stored in Config.rawTokens
 	SSHKey   string `yaml:"ssh_key,omitempty"` // optional SSH key path for clone authentication
+	Enabled  *bool  `yaml:"enabled,omitempty"` // nil or true = enabled, false = disabled
+}
+
+// IsEnabled returns true if the resource is enabled (default).
+func (r Resource) IsEnabled() bool {
+	return r.Enabled == nil || *r.Enabled
 }
 
 // APIURL 返回用于 provider API 调用的 HTTPS 地址：https://<host>
@@ -67,14 +73,21 @@ func (r Resource) HTTPURL(path string) string {
 
 // Group defines a remote group (GitLab group or GitHub org) whose repos are managed together.
 type Group struct {
-	Name      string      `yaml:"name"`
-	Resource  string      `yaml:"resource"`
-	Path      string      `yaml:"path"`
-	LocalPath string      `yaml:"local_path,omitempty"`
-	Recursive bool        `yaml:"recursive,omitempty"`
-	SSHKey    string      `yaml:"ssh_key,omitempty"` // optional, overrides resource SSH key for clone
-	Token     string      `yaml:"token,omitempty"`   // optional, overrides resource token for clone (supports ${ENV_VAR})
-	Repos     []GroupRepo `yaml:"repos,omitempty"`
+	Name         string      `yaml:"name"`
+	Resource     string      `yaml:"resource"`
+	Path         string      `yaml:"path"`
+	LocalPath    string      `yaml:"local_path,omitempty"`
+	Recursive    bool        `yaml:"recursive,omitempty"`
+	SSHKey       string      `yaml:"ssh_key,omitempty"`       // optional, overrides resource SSH key for clone
+	Token        string      `yaml:"token,omitempty"`         // optional, overrides resource token for clone (supports ${ENV_VAR})
+	Enabled      *bool       `yaml:"enabled,omitempty"`       // nil or true = enabled, false = disabled
+	ExcludeRepos []string    `yaml:"exclude_repos,omitempty"` // repo names to exclude from operations
+	Repos        []GroupRepo `yaml:"repos,omitempty"`
+}
+
+// IsEnabled returns true if the group is enabled (default).
+func (g Group) IsEnabled() bool {
+	return g.Enabled == nil || *g.Enabled
 }
 
 // GroupRepo is a repo entry within a group. Local path is auto-derived from group settings.
@@ -92,6 +105,12 @@ type Repo struct {
 	LocalPath string `yaml:"local_path,omitempty"` // defaults to ./<name> if empty
 	Token     string `yaml:"token,omitempty"`      // optional, overrides resource token for clone (supports ${ENV_VAR})
 	SSHKey    string `yaml:"ssh_key,omitempty"`    // optional, overrides resource SSH key for clone
+	Enabled   *bool  `yaml:"enabled,omitempty"`    // nil or true = enabled, false = disabled
+}
+
+// IsEnabled returns true if the repo is enabled (default).
+func (r Repo) IsEnabled() bool {
+	return r.Enabled == nil || *r.Enabled
 }
 
 // Load reads and parses a configuration file, resolves token placeholders,

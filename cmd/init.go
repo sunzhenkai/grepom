@@ -53,9 +53,9 @@ var initCmd = &cobra.Command{
 }
 
 func init() {
-	initCmd.Flags().StringVar(&initBase, "base", "", "base directory for cloned repos (default: ~/projects)")
-	initCmd.Flags().StringVar(&initProvider, "provider", "", "provider type for initial resource (gitlab or github)")
-	initCmd.Flags().StringVar(&initURL, "url", "", "API base URL for initial resource")
-	initCmd.Flags().StringVar(&initToken, "token", "", "API token for initial resource (supports ${ENV_VAR} syntax)")
+	initCmd.Flags().StringVarP(&initBase, "base", "b", "", "base directory for cloned repos (default: ~/projects)")
+	initCmd.Flags().StringVarP(&initProvider, "provider", "p", "", "provider type for initial resource (gitlab or github)")
+	initCmd.Flags().StringVarP(&initURL, "url", "u", "", "API base URL for initial resource")
+	initCmd.Flags().StringVarP(&initToken, "token", "k", "", "API token for initial resource (supports ${ENV_VAR} syntax)")
 	rootCmd.AddCommand(initCmd)
 }

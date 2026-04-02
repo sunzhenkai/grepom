@@ -49,6 +49,16 @@ Only new repos are added to the config; existing entries are never removed.`,
 			if syncResource != "" && g.Resource != syncResource {
 				continue
 			}
+			// Skip disabled groups (4.1)
+			if !g.IsEnabled() {
+				config.Verbose("skipping disabled group %q", g.Name)
+				continue
+			}
+			// Skip groups whose resource is disabled (4.2)
+			if res, ok := cfg.Resources[g.Resource]; ok && !res.IsEnabled() {
+				config.Verbose("skipping group %q (resource %q is disabled)", g.Name, g.Resource)
+				continue
+			}
 			groupsToProcess = append(groupsToProcess, g)
 		}
 
@@ -126,7 +136,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 }
 
 func init() {
-	syncCmd.Flags().StringVar(&syncGroup, "group", "", "sync a specific group by name")
-	syncCmd.Flags().StringVar(&syncResource, "resource", "", "sync all groups using a specific resource")
+	syncCmd.Flags().StringVarP(&syncGroup, "group", "g", "", "sync a specific group by name")
+	syncCmd.Flags().StringVarP(&syncResource, "resource", "R", "", "sync all groups using a specific resource")
 	rootCmd.AddCommand(syncCmd)
 }

@@ -66,7 +66,7 @@ var searchCmd = &cobra.Command{
 }
 
 func init() {
-	searchCmd.Flags().StringVar(&searchGroup, "group", "", "filter by group name")
-	searchCmd.Flags().StringVar(&searchResource, "resource", "", "filter by resource name")
+	searchCmd.Flags().StringVarP(&searchGroup, "group", "g", "", "filter by group name")
+	searchCmd.Flags().StringVarP(&searchResource, "resource", "R", "", "filter by resource name")
 	rootCmd.AddCommand(searchCmd)
 }

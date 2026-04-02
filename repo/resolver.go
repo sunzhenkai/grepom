@@ -10,9 +10,10 @@ import (
 
 // Filter defines criteria for filtering repos.
 type Filter struct {
-	Name     string
-	Group    string // group name
-	Resource string // resource name
+	Name            string
+	Group           string // group name
+	Resource        string // resource name
+	IncludeDisabled bool   // when true, include disabled/excluded repos in results
 }
 
 // Resolver builds a list of provider.Repo from the config.
@@ -24,8 +25,9 @@ func NewResolver(cfg *config.Config) *Resolver {
 	return &Resolver{cfg: cfg}
 }
 
-// Resolve builds the full repo list from all groups and standalone repos.
-func (r *Resolver) Resolve() ([]provider.Repo, error) {
+// resolveInternal builds the full repo list from all groups and standalone repos,
+// setting DisabledReason for each repo that should be excluded.
+func (r *Resolver) resolveInternal() []provider.Repo {
 	var allRepos []provider.Repo
 
 	for _, g := range r.cfg.Groups {
@@ -50,7 +52,8 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 
 		for _, gr := range g.Repos {
 			localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
-			allRepos = append(allRepos, provider.Repo{
+
+			pRepo := provider.Repo{
 				Name:           gr.Name,
 				CloneURL:       res.HTTPSURL(gr.Path),
 				SSHURL:         deriveSSHURL(gr.Path, res.URL),
@@ -62,7 +65,18 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 				SSHKey:         sshKey,
 				HasGroupToken:  hasGroupToken,
 				HasGroupSSHKey: hasGroupSSHKey,
-			})
+			}
+
+			// Determine exclusion reason (priority: resource > group > exclude_repos)
+			if !res.IsEnabled() {
+				pRepo.DisabledReason = "disabled"
+			} else if !g.IsEnabled() {
+				pRepo.DisabledReason = "disabled"
+			} else if isExcluded(g.ExcludeRepos, gr.Name) {
+				pRepo.DisabledReason = "excluded"
+			}
+
+			allRepos = append(allRepos, pRepo)
 		}
 	}
 
@@ -88,7 +102,8 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 
 		localPath := config.ResolveRepoPath(r.cfg.Base, repo.LocalPath)
 		repoPath := extractRepoPath(repo.URL)
-		allRepos = append(allRepos, provider.Repo{
+
+		pRepo := provider.Repo{
 			Name:           repo.Name,
 			CloneURL:       res.HTTPSURL(repoPath),
 			SSHURL:         deriveSSHURL(repoPath, res.URL),
@@ -99,18 +114,61 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 			SSHKey:         sshKey,
 			HasGroupToken:  hasGroupToken,
 			HasGroupSSHKey: hasGroupSSHKey,
-		})
+		}
+
+		// Determine exclusion reason (priority: resource > repo)
+		if !res.IsEnabled() {
+			pRepo.DisabledReason = "disabled"
+		} else if !repo.IsEnabled() {
+			pRepo.DisabledReason = "disabled"
+		}
+
+		allRepos = append(allRepos, pRepo)
 	}
 
-	return allRepos, nil
+	return allRepos
+}
+
+// isExcluded checks if a repo name is in the exclude list.
+func isExcluded(excludeRepos []string, repoName string) bool {
+	for _, name := range excludeRepos {
+		if name == repoName {
+			return true
+		}
+	}
+	return false
+}
+
+// Resolve builds the full repo list, excluding disabled and excluded repos.
+func (r *Resolver) Resolve() ([]provider.Repo, error) {
+	allRepos := r.resolveInternal()
+
+	// Filter out disabled/excluded repos
+	var enabled []provider.Repo
+	for _, repo := range allRepos {
+		if repo.DisabledReason == "" {
+			enabled = append(enabled, repo)
+		}
+	}
+	return enabled, nil
 }
 
 // ResolveAndFilter builds the repo list and applies the given filter.
+// When filter.IncludeDisabled is true, disabled/excluded repos are included in results.
 func (r *Resolver) ResolveAndFilter(filter Filter) ([]provider.Repo, error) {
-	allRepos, err := r.Resolve()
-	if err != nil {
-		return nil, err
+	allRepos := r.resolveInternal()
+
+	// If IncludeDisabled is false, filter out disabled/excluded repos
+	if !filter.IncludeDisabled {
+		var enabled []provider.Repo
+		for _, repo := range allRepos {
+			if repo.DisabledReason == "" {
+				enabled = append(enabled, repo)
+			}
+		}
+		allRepos = enabled
 	}
+
 	return ApplyFilter(allRepos, filter), nil
 }
 

@@ -54,6 +54,36 @@ func (g *GitLabProvider) ListRepos(ctx context.Context, params ListReposParams) 
 	return allRepos, nil
 }
 
+func (g *GitLabProvider) ListGroups(ctx context.Context, params ListGroupsParams) ([]RemoteGroup, error) {
+	var allGroups []RemoteGroup
+	page := 1
+
+	for {
+		url := fmt.Sprintf("%s/api/v4/groups?per_page=100&page=%d", params.ServerURL, page)
+
+		var groups []gitlabGroup
+		nextPage, err := g.getWithPagination(ctx, params.Token, url, &groups)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, grp := range groups {
+			allGroups = append(allGroups, RemoteGroup{
+				Name:     grp.Path,
+				Path:     grp.FullPath,
+				Provider: "gitlab",
+			})
+		}
+
+		if nextPage == 0 {
+			break
+		}
+		page = nextPage
+	}
+
+	return allGroups, nil
+}
+
 func (g *GitLabProvider) listGroupRepos(ctx context.Context, params ListReposParams, groupPath string, recursive bool) ([]Repo, error) {
 	group, err := g.getGroupByPath(ctx, params, groupPath)
 	if err != nil {

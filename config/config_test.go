@@ -937,3 +937,219 @@ groups:
 		t.Errorf("expected stripped URL with port, got: %s", res.URL)
 	}
 }
+
+// --- Enabled field tests ---
+
+// helper for creating *bool pointers in tests
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func TestLoad_ResourceEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		wantBool bool
+		wantNil  bool
+	}{
+		{
+			name: "enabled true",
+			yaml: `base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: gitlab.com
+    token: test
+    enabled: true
+groups:
+  - name: test
+    resource: gl
+    path: my-org`,
+			wantBool: true,
+			wantNil:  false,
+		},
+		{
+			name: "enabled false",
+			yaml: `base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: gitlab.com
+    token: test
+    enabled: false
+groups:
+  - name: test
+    resource: gl
+    path: my-org`,
+			wantBool: false,
+			wantNil:  false,
+		},
+		{
+			name: "enabled omitted defaults to true",
+			yaml: `base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: gitlab.com
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org`,
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "test.yml")
+			os.WriteFile(path, []byte(tt.yaml), 0644)
+
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			res := cfg.Resources["gl"]
+			if tt.wantNil {
+				if res.Enabled != nil {
+					t.Errorf("expected Enabled to be nil, got %v", *res.Enabled)
+				}
+				if !res.IsEnabled() {
+					t.Error("IsEnabled() should return true when Enabled is nil")
+				}
+			} else {
+				if res.Enabled == nil {
+					t.Fatal("expected Enabled to be non-nil")
+				}
+				if *res.Enabled != tt.wantBool {
+					t.Errorf("expected Enabled=%v, got %v", tt.wantBool, *res.Enabled)
+				}
+				if res.IsEnabled() != tt.wantBool {
+					t.Errorf("expected IsEnabled()=%v", tt.wantBool)
+				}
+			}
+		})
+	}
+}
+
+func TestLoad_GroupEnabledAndExcludeRepos(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: gitlab.com
+    token: test
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+    enabled: false
+    exclude_repos:
+      - deprecated-app
+      - temp-repo
+  - name: backend
+    resource: gl
+    path: my-org/backend
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Check frontend group
+	if len(cfg.Groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(cfg.Groups))
+	}
+	fe := cfg.Groups[0]
+	if fe.Name != "frontend" {
+		t.Fatalf("expected group 'frontend', got %s", fe.Name)
+	}
+	if fe.Enabled == nil || *fe.Enabled != false {
+		t.Error("expected frontend Enabled=false")
+	}
+	if fe.IsEnabled() {
+		t.Error("expected frontend IsEnabled()=false")
+	}
+	if len(fe.ExcludeRepos) != 2 {
+		t.Fatalf("expected 2 exclude_repos, got %d", len(fe.ExcludeRepos))
+	}
+	if fe.ExcludeRepos[0] != "deprecated-app" || fe.ExcludeRepos[1] != "temp-repo" {
+		t.Errorf("unexpected exclude_repos: %v", fe.ExcludeRepos)
+	}
+
+	// Check backend group (defaults)
+	be := cfg.Groups[1]
+	if be.Name != "backend" {
+		t.Fatalf("expected group 'backend', got %s", be.Name)
+	}
+	if be.Enabled != nil {
+		t.Error("expected backend Enabled to be nil (default)")
+	}
+	if !be.IsEnabled() {
+		t.Error("expected backend IsEnabled()=true (default)")
+	}
+	if len(be.ExcludeRepos) != 0 {
+		t.Errorf("expected no exclude_repos for backend, got %v", be.ExcludeRepos)
+	}
+}
+
+func TestLoad_RepoEnabled(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: gitlab.com
+    token: test
+repos:
+  - name: dotfiles
+    resource: gl
+    url: https://gitlab.com/me/dotfiles.git
+    enabled: false
+  - name: notes
+    resource: gl
+    url: https://gitlab.com/me/notes.git
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(cfg.Repos) != 2 {
+		t.Fatalf("expected 2 repos, got %d", len(cfg.Repos))
+	}
+
+	// dotfiles: explicitly disabled
+	dot := cfg.Repos[0]
+	if dot.Name != "dotfiles" {
+		t.Fatalf("expected repo 'dotfiles', got %s", dot.Name)
+	}
+	if dot.Enabled == nil || *dot.Enabled != false {
+		t.Error("expected dotfiles Enabled=false")
+	}
+	if dot.IsEnabled() {
+		t.Error("expected dotfiles IsEnabled()=false")
+	}
+
+	// notes: default (nil → enabled)
+	notes := cfg.Repos[1]
+	if notes.Name != "notes" {
+		t.Fatalf("expected repo 'notes', got %s", notes.Name)
+	}
+	if notes.Enabled != nil {
+		t.Error("expected notes Enabled to be nil (default)")
+	}
+	if !notes.IsEnabled() {
+		t.Error("expected notes IsEnabled()=true (default)")
+	}
+}

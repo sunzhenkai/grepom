@@ -493,6 +493,334 @@ func TestApplySearchFilter_WithResourceFilter(t *testing.T) {
 		t.Fatalf("expected 1 result from github, got %d", len(results))
 	}
 	if results[0].Name != "web-api" {
-		t.Errorf("expected 'web-api', got %s", results[0].Name)
+		t.Errorf("expected 'web-api', got: %s", results[0].Name)
+	}
+}
+
+// --- Exclusion tests ---
+
+// helper for creating *bool pointers in tests
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func TestResolve_ResourceDisabled_ExcludesAllAssociated(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl":   {Provider: "gitlab", URL: "gitlab.com", Token: "test", Enabled: boolPtr(false)},
+			"ghub": {Provider: "github", URL: "github.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+				},
+			},
+			{
+				Name: "oss", Resource: "ghub", Path: "my-oss", LocalPath: "./oss",
+				Repos: []config.GroupRepo{
+					{Name: "tool", URL: "https://github.com/my-oss/tool.git", Path: "my-oss/tool"},
+				},
+			},
+		},
+		Repos: []config.Repo{
+			{Name: "dotfiles", Resource: "gl", URL: "https://gitlab.com/me/dotfiles.git", LocalPath: "./dotfiles"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	// Only the "oss" group's repo should be included (gl is disabled)
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (gl disabled), got %d: %+v", len(repos), repos)
+	}
+	if repos[0].Name != "tool" {
+		t.Errorf("expected 'tool', got: %s", repos[0].Name)
+	}
+}
+
+func TestResolve_GroupDisabled_ExcludesGroupRepos(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Enabled: boolPtr(false),
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "lib", URL: "https://gitlab.com/org/frontend/lib.git", Path: "org/frontend/lib"},
+				},
+			},
+			{
+				Name: "backend", Resource: "gl", Path: "org/backend", LocalPath: "./backend",
+				Repos: []config.GroupRepo{
+					{Name: "api", URL: "https://gitlab.com/org/backend/api.git", Path: "org/backend/api"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (frontend disabled), got %d", len(repos))
+	}
+	if repos[0].Name != "api" {
+		t.Errorf("expected 'api', got: %s", repos[0].Name)
+	}
+}
+
+func TestResolve_ExcludeRepos_ExcludesSpecificRepo(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				ExcludeRepos: []string{"deprecated-app"},
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "deprecated-app", URL: "https://gitlab.com/org/frontend/deprecated-app.git", Path: "org/frontend/deprecated-app"},
+					{Name: "lib", URL: "https://gitlab.com/org/frontend/lib.git", Path: "org/frontend/lib"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos (deprecated-app excluded), got %d", len(repos))
+	}
+	for _, r := range repos {
+		if r.Name == "deprecated-app" {
+			t.Error("deprecated-app should be excluded")
+		}
+	}
+}
+
+func TestResolve_StandaloneRepoDisabled(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gh": {Provider: "github", URL: "github.com", Token: "test"},
+		},
+		Repos: []config.Repo{
+			{Name: "dotfiles", Resource: "gh", URL: "https://github.com/me/dotfiles.git", LocalPath: "./dotfiles", Enabled: boolPtr(false)},
+			{Name: "notes", Resource: "gh", URL: "https://github.com/me/notes.git", LocalPath: "./notes"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (dotfiles disabled), got %d", len(repos))
+	}
+	if repos[0].Name != "notes" {
+		t.Errorf("expected 'notes', got: %s", repos[0].Name)
+	}
+}
+
+func TestResolveAndFilter_IncludeDisabled_ReturnsAll(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test", Enabled: boolPtr(false)},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Enabled:      boolPtr(false),
+				ExcludeRepos: []string{"excluded-repo"},
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "excluded-repo", URL: "https://gitlab.com/org/frontend/excluded-repo.git", Path: "org/frontend/excluded-repo"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+
+	// Default: excludes all
+	repos, err := resolver.ResolveAndFilter(Filter{})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+	if len(repos) != 0 {
+		t.Fatalf("expected 0 repos with default filter, got %d", len(repos))
+	}
+
+	// IncludeDisabled: returns all with reasons
+	repos, err = resolver.ResolveAndFilter(Filter{IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos with IncludeDisabled, got %d", len(repos))
+	}
+
+	// Check disabled reasons
+	for _, r := range repos {
+		if r.DisabledReason == "" {
+			t.Errorf("expected DisabledReason to be set for %s", r.Name)
+		}
+		// Both repos have resource disabled, so both should be "disabled"
+		if r.DisabledReason != "disabled" {
+			t.Errorf("expected 'disabled' for %s (resource disabled takes priority), got %s", r.Name, r.DisabledReason)
+		}
+	}
+}
+
+func TestResolveAndFilter_IncludeDisabled_ExcludeReposReason(t *testing.T) {
+	// Test that exclude_repos gives "excluded" reason when resource and group are enabled
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				ExcludeRepos: []string{"deprecated-app"},
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "deprecated-app", URL: "https://gitlab.com/org/frontend/deprecated-app.git", Path: "org/frontend/deprecated-app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.ResolveAndFilter(Filter{IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos with IncludeDisabled, got %d", len(repos))
+	}
+
+	for _, r := range repos {
+		if r.Name == "app" && r.DisabledReason != "" {
+			t.Errorf("expected app to have no reason, got %s", r.DisabledReason)
+		}
+		if r.Name == "deprecated-app" && r.DisabledReason != "excluded" {
+			t.Errorf("expected deprecated-app to have reason 'excluded', got %s", r.DisabledReason)
+		}
+	}
+}
+
+func TestResolve_ExclusionPriority(t *testing.T) {
+	// Priority: resource > group > exclude_repos > repo
+	// When resource is disabled, everything under it is disabled regardless of other settings
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test", Enabled: boolPtr(false)},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Enabled:      boolPtr(true), // group enabled but resource is disabled
+				ExcludeRepos: []string{"excluded-repo"},
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "excluded-repo", URL: "https://gitlab.com/org/frontend/excluded-repo.git", Path: "org/frontend/excluded-repo"},
+				},
+			},
+		},
+		Repos: []config.Repo{
+			{Name: "dotfiles", Resource: "gl", URL: "https://gitlab.com/me/dotfiles.git", LocalPath: "./dotfiles", Enabled: boolPtr(true)},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+
+	// Default: all should be excluded because resource is disabled
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if len(repos) != 0 {
+		t.Fatalf("expected 0 repos (resource disabled takes priority), got %d", len(repos))
+	}
+
+	// IncludeDisabled: check all have "disabled" reason (not "excluded")
+	repos, err = resolver.ResolveAndFilter(Filter{IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+	for _, r := range repos {
+		// Resource disabled should take priority over group enabled, exclude_repos, and repo enabled
+		if r.DisabledReason != "disabled" {
+			t.Errorf("expected 'disabled' for %s (resource disabled takes priority), got %s", r.Name, r.DisabledReason)
+		}
+	}
+}
+
+func TestResolve_GroupDisabledTakesPriorityOverExcludeRepos(t *testing.T) {
+	// When group is disabled, exclude_repos doesn't matter
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Enabled:      boolPtr(false),
+				ExcludeRepos: []string{"excluded-repo"},
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "other", URL: "https://gitlab.com/org/frontend/other.git", Path: "org/frontend/other"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+
+	// Default: all should be excluded
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if len(repos) != 0 {
+		t.Fatalf("expected 0 repos (group disabled), got %d", len(repos))
+	}
+
+	// IncludeDisabled: all should have "disabled" reason (not "excluded")
+	repos, err = resolver.ResolveAndFilter(Filter{IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+	for _, r := range repos {
+		if r.DisabledReason != "disabled" {
+			t.Errorf("expected 'disabled' for %s (group disabled takes priority), got %s", r.Name, r.DisabledReason)
+		}
 	}
 }

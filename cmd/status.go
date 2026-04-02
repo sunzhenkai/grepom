@@ -2,7 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
+	"os"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	gitpkg "github.com/wii/grepom/git"
@@ -109,29 +110,26 @@ var statusCmd = &cobra.Command{
 
 		counts.total = len(repos)
 
-		// Print summary line
-		var parts []string
-		parts = append(parts, fmt.Sprintf("%d repos:", counts.total))
-		parts = append(parts, fmt.Sprintf("%d clean", counts.clean))
+		// 打印概要表格
+		w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(w, "STATUS\tCOUNT")
+		if counts.clean > 0 {
+			fmt.Fprintf(w, "clean\t%d\n", counts.clean)
+		}
 		if counts.dirty > 0 {
-			parts = append(parts, fmt.Sprintf("%d dirty", counts.dirty))
+			fmt.Fprintf(w, "dirty\t%d\n", counts.dirty)
 		}
 		if counts.ahead > 0 {
-			parts = append(parts, fmt.Sprintf("%d ahead", counts.ahead))
+			fmt.Fprintf(w, "ahead\t%d\n", counts.ahead)
 		}
 		if counts.behind > 0 {
-			parts = append(parts, fmt.Sprintf("%d behind", counts.behind))
-		}
-		var summary strings.Builder
-		summary.WriteString(parts[0])
-		for _, p := range parts[1:] {
-			summary.WriteString(", ")
-			summary.WriteString(p)
+			fmt.Fprintf(w, "behind\t%d\n", counts.behind)
 		}
 		if counts.notCloned > 0 {
-			fmt.Fprintf(&summary, " · %d not cloned", counts.notCloned)
+			fmt.Fprintf(w, "not cloned\t%d\n", counts.notCloned)
 		}
-		fmt.Println(summary.String())
+		w.Flush()
+		fmt.Printf("\n%d repos total\n", counts.total)
 
 		// Print repo list
 		fmt.Println()
@@ -156,7 +154,7 @@ var statusCmd = &cobra.Command{
 }
 
 func init() {
-	statusCmd.Flags().StringVar(&statusGroup, "group", "", "filter by group name")
-	statusCmd.Flags().StringVar(&statusResource, "resource", "", "filter by resource name")
+	statusCmd.Flags().StringVarP(&statusGroup, "group", "g", "", "filter by group name")
+	statusCmd.Flags().StringVarP(&statusResource, "resource", "R", "", "filter by resource name")
 	rootCmd.AddCommand(statusCmd)
 }

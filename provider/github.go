@@ -28,6 +28,10 @@ type githubRepo struct {
 	Private  bool   `json:"private"`
 }
 
+type githubOrg struct {
+	Login string `json:"login"`
+}
+
 func (g *GitHubProvider) getClient() *http.Client {
 	if g.client == nil {
 		g.client = &http.Client{Timeout: 30 * time.Second}
@@ -47,6 +51,36 @@ func (g *GitHubProvider) ListRepos(ctx context.Context, params ListReposParams) 
 	}
 
 	return allRepos, nil
+}
+
+func (g *GitHubProvider) ListGroups(ctx context.Context, params ListGroupsParams) ([]RemoteGroup, error) {
+	var allGroups []RemoteGroup
+	page := 1
+
+	for {
+		apiURL := fmt.Sprintf("%s/user/orgs?per_page=100&page=%d", params.ServerURL, page)
+
+		var orgs []githubOrg
+		nextPage, err := g.getWithPagination(ctx, params.Token, apiURL, &orgs)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, org := range orgs {
+			allGroups = append(allGroups, RemoteGroup{
+				Name:     org.Login,
+				Path:     org.Login,
+				Provider: "github",
+			})
+		}
+
+		if nextPage == 0 {
+			break
+		}
+		page = nextPage
+	}
+
+	return allGroups, nil
 }
 
 func (g *GitHubProvider) listOrgRepos(ctx context.Context, params ListReposParams, orgName string) ([]Repo, error) {

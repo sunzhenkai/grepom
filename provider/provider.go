@@ -20,6 +20,9 @@ type Repo struct {
 	// Source tracking for 6-level auth priority chain
 	HasGroupToken  bool // true if token was set at group/repo level (override)
 	HasGroupSSHKey bool // true if ssh_key was set at group/repo level (override)
+
+	// Exclusion tracking
+	DisabledReason string // "", "disabled" (resource/group/repo enabled:false), "excluded" (exclude_repos)
 }
 
 // GroupQuery specifies a remote group to discover repos from.
@@ -36,9 +39,23 @@ type ListReposParams struct {
 	Orgs      []string
 }
 
+// RemoteGroup represents a remote group/org discovered from a provider API.
+type RemoteGroup struct {
+	Name     string // group/org 名称
+	Path     string // 完整路径（GitLab: full_path, GitHub: login）
+	Provider string // "gitlab" 或 "github"
+}
+
+// ListGroupsParams contains the parameters for listing groups from a provider.
+type ListGroupsParams struct {
+	ServerURL string
+	Token     string
+}
+
 // Provider is the interface for remote repository providers.
 type Provider interface {
 	ListRepos(ctx context.Context, params ListReposParams) ([]Repo, error)
+	ListGroups(ctx context.Context, params ListGroupsParams) ([]RemoteGroup, error)
 }
 
 var registry = map[string]func() Provider{}
