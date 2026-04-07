@@ -265,8 +265,9 @@ func (c *Config) validate() error {
 		if res.Provider == "" {
 			return fmt.Errorf("config: resource %q: 'provider' field is required", name)
 		}
-		if res.Provider != "gitlab" && res.Provider != "github" {
-			return fmt.Errorf("config: resource %q: unsupported provider %q (use 'gitlab' or 'github')", name, res.Provider)
+		validProviders := map[string]bool{"gitlab": true, "github": true, "generic": true}
+		if !validProviders[res.Provider] {
+			return fmt.Errorf("config: resource %q: unsupported provider %q (use 'gitlab', 'github', or 'generic')", name, res.Provider)
 		}
 		if res.URL == "" {
 			return fmt.Errorf("config: resource %q: 'url' field is required", name)

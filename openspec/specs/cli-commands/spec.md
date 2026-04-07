@@ -5,6 +5,7 @@ The system SHALL provide a root command `grepom` with the following global flags
 
 The system SHALL also provide the following subcommands:
 - `init`: initialize configuration file
+- `example`: export a complete example configuration with all features
 - `clone`: clone repositories（使用 5 级认证优先级链，SSH 优先，输出认证尝试日志）
 - `list`: list resources, groups, or repositories（通过 --type 标志切换，默认列出 repos）
 - `status`: show git status
@@ -16,7 +17,7 @@ The system SHALL also provide the following subcommands:
 
 #### Scenario: Show help
 - **WHEN** user runs `grepom --help`
-- **THEN** the system displays available commands including `search` and `interactive` and global flags
+- **THEN** the system displays available commands including `example`, `search` and `interactive` and global flags
 
 ### Requirement: clone command
 系统 SHALL 提供 `grepom clone` 命令，将仓库 clone 到本地文件系统。Group 内 repo 的目标路径通过路径推导公式计算。独立 repo 使用其 local_path。
