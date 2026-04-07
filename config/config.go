@@ -15,15 +15,15 @@ import (
 // envVarPattern matches ${VAR_NAME} placeholder syntax in token fields
 var envVarPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)}$`)
 
-// stripScheme 剥离 URL 中的 http:// 或 https:// 前缀，返回纯 host:port。
-// 非协议开头的字符串原样返回。
-func stripScheme(url string) string {
-	for _, scheme := range []string{"https://", "http://"} {
-		if strings.HasPrefix(url, scheme) {
-			return strings.TrimPrefix(url, scheme)
+// parseResourceURL 解析 resource URL，返回 (host, scheme)。
+// scheme 为 "https"、"http" 或 ""（无前缀，auto 模式）。
+func parseResourceURL(rawURL string) (host, scheme string) {
+	for _, s := range []string{"https://", "http://"} {
+		if strings.HasPrefix(rawURL, s) {
+			return strings.TrimPrefix(rawURL, s), strings.TrimSuffix(s, "://")
 		}
 	}
-	return url
+	return rawURL, ""
 }
 
 // Config represents the top-level configuration file structure.
@@ -44,6 +44,7 @@ type Resource struct {
 	Token    string `yaml:"token"`             // resolved at runtime; raw placeholder stored in Config.rawTokens
 	SSHKey   string `yaml:"ssh_key,omitempty"` // optional SSH key path for clone authentication
 	Enabled  *bool  `yaml:"enabled,omitempty"` // nil or true = enabled, false = disabled
+	scheme   string // resolved from URL prefix: "https", "http", or "" (auto). not exported to YAML.
 }
 
 // IsEnabled returns true if the resource is enabled (default).
@@ -51,8 +52,17 @@ func (r Resource) IsEnabled() bool {
 	return r.Enabled == nil || *r.Enabled
 }
 
-// APIURL 返回用于 provider API 调用的 HTTPS 地址：https://<host>
+// Scheme 返回 URL 的协议（"https"、"http" 或 "" 表示 auto）。
+func (r Resource) Scheme() string {
+	return r.scheme
+}
+
+// APIURL 返回用于 provider API 调用的地址。
+// scheme 为 "http" 时返回 http://<host>，否则返回 https://<host>（包括 auto 模式）。
 func (r Resource) APIURL() string {
+	if r.scheme == "http" {
+		return "http://" + r.URL
+	}
 	return "https://" + r.URL
 }
 
@@ -261,9 +271,9 @@ func (c *Config) validate() error {
 		if res.URL == "" {
 			return fmt.Errorf("config: resource %q: 'url' field is required", name)
 		}
-		// 统一转换为纯 host:port 格式（剥离协议前缀）
+		// 解析 URL，保留协议前缀信息
 		updated := res
-		updated.URL = stripScheme(res.URL)
+		updated.URL, updated.scheme = parseResourceURL(res.URL)
 		c.Resources[name] = updated
 	}
 

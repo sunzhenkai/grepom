@@ -227,6 +227,14 @@ func runListRemoteRepos(cfg *config.Config) error {
 		}
 
 		repos, err := p.ListRepos(context.Background(), params)
+		if err != nil && res.Scheme() == "" && isConnectionError(err) {
+			config.Verbose("resource %q: HTTPS connection failed, trying HTTP", g.Resource)
+			params.ServerURL = buildHTTPURL(res.APIURL())
+			repos, err = p.ListRepos(context.Background(), params)
+			if err == nil {
+				warnHTTPFallback(g.Resource)
+			}
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: group %q: %v\n", g.Name, err)
 			continue
@@ -308,6 +316,14 @@ func runListRemoteGroups(cfg *config.Config) error {
 		}
 
 		groups, err := p.ListGroups(context.Background(), params)
+		if err != nil && rq.res.Scheme() == "" && isConnectionError(err) {
+			config.Verbose("resource %q: HTTPS connection failed, trying HTTP", rq.name)
+			params.ServerURL = buildHTTPURL(rq.res.APIURL())
+			groups, err = p.ListGroups(context.Background(), params)
+			if err == nil {
+				warnHTTPFallback(rq.name)
+			}
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: resource %q: %v\n", rq.name, err)
 			continue

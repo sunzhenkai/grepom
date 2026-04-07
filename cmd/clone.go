@@ -105,6 +105,7 @@ func runParallelClone(tasks []gitpkg.CloneTask) error {
 }
 
 func runSequentialClone(tasks []gitpkg.CloneTask) error {
+	var results []gitpkg.CloneResult
 	for _, task := range tasks {
 		fmt.Printf("cloning %s...\n", task.Repo.Path)
 		opts := gitpkg.CloneOptions{
@@ -114,12 +115,16 @@ func runSequentialClone(tasks []gitpkg.CloneTask) error {
 			HasGroupToken:  task.Repo.HasGroupToken,
 			HasGroupSSHKey: task.Repo.HasGroupSSHKey,
 		}
+		result := gitpkg.CloneResult{Repo: task.Repo, FullPath: task.FullPath}
 		if err := gitpkg.Clone(task.FullPath, task.Repo.SSHURL, task.Repo.CloneURL, opts); err != nil {
+			result.Err = err
 			fmt.Fprintf(os.Stderr, "error cloning %s: %v\n", task.Repo.Path, err)
-			continue
+		} else {
+			fmt.Printf("  %s done\n", task.Repo.Name)
 		}
-		fmt.Printf("  %s done\n", task.Repo.Name)
+		results = append(results, result)
 	}
+	PrintCloneSummary(results, nil)
 	return nil
 }
 

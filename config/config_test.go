@@ -767,49 +767,89 @@ func TestFindResource_NotFound(t *testing.T) {
 	}
 }
 
-// --- URL strip scheme tests ---
+// --- URL parse scheme tests ---
 
-func TestStripScheme_HTTPS(t *testing.T) {
-	result := stripScheme("https://gitlab.mycompany.com")
-	if result != "gitlab.mycompany.com" {
-		t.Errorf("expected gitlab.mycompany.com, got: %s", result)
+func TestParseResourceURL_HTTPS(t *testing.T) {
+	host, scheme := parseResourceURL("https://gitlab.mycompany.com")
+	if host != "gitlab.mycompany.com" || scheme != "https" {
+		t.Errorf("expected (gitlab.mycompany.com, https), got (%s, %s)", host, scheme)
 	}
 }
 
-func TestStripScheme_HTTP(t *testing.T) {
-	result := stripScheme("http://gitlab.mycompany.com:8080")
-	if result != "gitlab.mycompany.com:8080" {
-		t.Errorf("expected gitlab.mycompany.com:8080, got: %s", result)
+func TestParseResourceURL_HTTP(t *testing.T) {
+	host, scheme := parseResourceURL("http://gitlab.mycompany.com:8080")
+	if host != "gitlab.mycompany.com:8080" || scheme != "http" {
+		t.Errorf("expected (gitlab.mycompany.com:8080, http), got (%s, %s)", host, scheme)
 	}
 }
 
-func TestStripScheme_NoScheme(t *testing.T) {
-	result := stripScheme("gitlab.mycompany.com")
-	if result != "gitlab.mycompany.com" {
-		t.Errorf("expected gitlab.mycompany.com, got: %s", result)
+func TestParseResourceURL_NoScheme(t *testing.T) {
+	host, scheme := parseResourceURL("gitlab.mycompany.com")
+	if host != "gitlab.mycompany.com" || scheme != "" {
+		t.Errorf("expected (gitlab.mycompany.com, ), got (%s, %s)", host, scheme)
 	}
 }
 
-func TestStripScheme_Empty(t *testing.T) {
-	result := stripScheme("")
-	if result != "" {
-		t.Errorf("expected empty, got: %s", result)
+func TestParseResourceURL_Empty(t *testing.T) {
+	host, scheme := parseResourceURL("")
+	if host != "" || scheme != "" {
+		t.Errorf("expected (, ), got (%s, %s)", host, scheme)
+	}
+}
+
+func TestParseResourceURL_NoSchemeWithPort(t *testing.T) {
+	host, scheme := parseResourceURL("gitlab.mycompany.com:8080")
+	if host != "gitlab.mycompany.com:8080" || scheme != "" {
+		t.Errorf("expected (gitlab.mycompany.com:8080, ), got (%s, %s)", host, scheme)
 	}
 }
 
 // --- Resource URL derivation tests ---
 
-func TestResource_APIURL(t *testing.T) {
+func TestResource_APIURL_Auto(t *testing.T) {
 	r := Resource{URL: "gitlab.mycompany.com"}
 	if got := r.APIURL(); got != "https://gitlab.mycompany.com" {
 		t.Errorf("expected https://gitlab.mycompany.com, got: %s", got)
 	}
 }
 
-func TestResource_APIURL_WithPort(t *testing.T) {
+func TestResource_APIURL_AutoWithPort(t *testing.T) {
 	r := Resource{URL: "gitlab.mycompany.com:8443"}
 	if got := r.APIURL(); got != "https://gitlab.mycompany.com:8443" {
 		t.Errorf("expected https://gitlab.mycompany.com:8443, got: %s", got)
+	}
+}
+
+func TestResource_APIURL_HTTPScheme(t *testing.T) {
+	r := Resource{URL: "gitlab.mycompany.com", scheme: "http"}
+	if got := r.APIURL(); got != "http://gitlab.mycompany.com" {
+		t.Errorf("expected http://gitlab.mycompany.com, got: %s", got)
+	}
+}
+
+func TestResource_APIURL_HTTPSScheme(t *testing.T) {
+	r := Resource{URL: "gitlab.mycompany.com", scheme: "https"}
+	if got := r.APIURL(); got != "https://gitlab.mycompany.com" {
+		t.Errorf("expected https://gitlab.mycompany.com, got: %s", got)
+	}
+}
+
+func TestResource_Scheme(t *testing.T) {
+	tests := []struct {
+		name   string
+		res    Resource
+		expect string
+	}{
+		{"auto (empty)", Resource{URL: "g.wii.pub"}, ""},
+		{"http", Resource{URL: "g.wii.pub", scheme: "http"}, "http"},
+		{"https", Resource{URL: "g.wii.pub", scheme: "https"}, "https"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.res.Scheme(); got != tt.expect {
+				t.Errorf("expected %q, got %q", tt.expect, got)
+			}
+		})
 	}
 }
 
@@ -909,6 +949,9 @@ groups:
 	if res.URL != "gitlab.mycompany.com" {
 		t.Errorf("expected stripped URL, got: %s", res.URL)
 	}
+	if res.Scheme() != "https" {
+		t.Errorf("expected scheme https, got: %s", res.Scheme())
+	}
 }
 
 func TestLoad_ResourceURLStripsHTTPPrefixWithPort(t *testing.T) {
@@ -935,6 +978,39 @@ groups:
 	res := cfg.Resources["gl"]
 	if res.URL != "gitlab.mycompany.com:8080" {
 		t.Errorf("expected stripped URL with port, got: %s", res.URL)
+	}
+	if res.Scheme() != "http" {
+		t.Errorf("expected scheme http, got: %s", res.Scheme())
+	}
+}
+
+func TestLoad_ResourceURLNoPrefixIsAuto(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: gitlab.mycompany.com
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	res := cfg.Resources["gl"]
+	if res.Scheme() != "" {
+		t.Errorf("expected empty scheme (auto), got: %s", res.Scheme())
+	}
+	if res.APIURL() != "https://gitlab.mycompany.com" {
+		t.Errorf("expected https://gitlab.mycompany.com, got: %s", res.APIURL())
 	}
 }
 

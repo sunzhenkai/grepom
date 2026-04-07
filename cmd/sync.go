@@ -79,19 +79,34 @@ Only new repos are added to the config; existing entries are never removed.`,
 
 			config.Verbose("syncing group %q (resource: %s, path: %s)", g.Name, g.Resource, g.Path)
 
-			params := provider.ListReposParams{
-				ServerURL: res.APIURL(),
-				Token:     res.Token,
-			}
+			serverURL := res.APIURL()
 
 			// GitLab: use Groups query; GitHub: use Orgs
+			var groups []provider.GroupQuery
+			var orgs []string
 			if res.Provider == "github" {
-				params.Orgs = []string{g.Path}
+				orgs = []string{g.Path}
 			} else {
-				params.Groups = []provider.GroupQuery{{Path: g.Path, Recursive: g.Recursive}}
+				groups = []provider.GroupQuery{{Path: g.Path, Recursive: g.Recursive}}
+			}
+
+			params := provider.ListReposParams{
+				ServerURL: serverURL,
+				Token:     res.Token,
+				Groups:    groups,
+				Orgs:      orgs,
 			}
 
 			repos, err := p.ListRepos(context.Background(), params)
+			if err != nil && res.Scheme() == "" && isConnectionError(err) {
+				// auto 模式：HTTPS 连接失败，尝试 HTTP
+				config.Verbose("resource %q: HTTPS connection failed, trying HTTP", g.Resource)
+				params.ServerURL = buildHTTPURL(serverURL)
+				repos, err = p.ListRepos(context.Background(), params)
+				if err == nil {
+					warnHTTPFallback(g.Resource)
+				}
+			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: group %q: %v\n", g.Name, err)
 				continue
