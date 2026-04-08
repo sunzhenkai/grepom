@@ -147,12 +147,15 @@ func interactiveInit() {
 	// Provider selection
 	survey.AskOne(&survey.Select{
 		Message: "Provider 类型:",
-		Options: []string{"gitlab", "github"},
+		Options: []string{"gitlab", "github", "generic"},
 	}, &answers.Provider)
 
 	// URL
-	defaultURL := "https://gitlab.com"
-	if answers.Provider == "github" {
+	defaultURL := ""
+	switch answers.Provider {
+	case "gitlab":
+		defaultURL = "https://gitlab.com"
+	case "github":
 		defaultURL = "https://github.com"
 	}
 	survey.AskOne(&survey.Input{
@@ -172,10 +175,7 @@ func interactiveInit() {
 	}, &answers.SSHKey)
 
 	// Add resource
-	name := "gitlab"
-	if answers.Provider == "github" {
-		name = "github"
-	}
+	name := answers.Provider
 	res := config.Resource{
 		Provider: answers.Provider,
 		URL:      answers.URL,
@@ -211,11 +211,14 @@ func interactiveAddResource() {
 
 	survey.AskOne(&survey.Select{
 		Message: "Provider 类型:",
-		Options: []string{"gitlab", "github"},
+		Options: []string{"gitlab", "github", "generic"},
 	}, &answers.Provider)
 
-	defaultURL := "https://gitlab.com"
-	if answers.Provider == "github" {
+	defaultURL := ""
+	switch answers.Provider {
+	case "gitlab":
+		defaultURL = "https://gitlab.com"
+	case "github":
 		defaultURL = "https://github.com"
 	}
 	survey.AskOne(&survey.Input{

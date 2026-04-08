@@ -34,6 +34,7 @@ func Execute() {
 }
 
 func init() {
+	cobra.EnablePrefixMatching = true
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", ".grepom.yml", "path to config file")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 }

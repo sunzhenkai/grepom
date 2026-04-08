@@ -24,7 +24,15 @@
 
 #### Scenario: 完整初始化流程
 - **WHEN** 用户在交互模式中选择"初始化配置"
-- **THEN** 系统依次提示：配置文件路径（默认 `.grepom.yml`）、base 目录（默认 `~/projects`）、是否添加资源、provider 类型（选择 gitlab/github）、API URL、token、是否配置 SSH key（可选）
+- **THEN** 系统依次提示：配置文件路径（默认 `.grepom.yml`）、base 目录（默认 `~/projects`）、是否添加资源、provider 类型（选择 gitlab/github/generic）、API URL、token、是否配置 SSH key（可选）
+
+#### Scenario: 选择 generic provider 时无默认 URL
+- **WHEN** 用户在初始化流程中选择 provider 为 `generic`
+- **THEN** 系统提示输入 URL 时不设默认值，用户必须手动输入
+
+#### Scenario: 选择 generic provider 时默认资源名
+- **WHEN** 用户在初始化流程中选择 provider 为 `generic`
+- **THEN** 系统使用 `generic` 作为默认资源名称
 
 #### Scenario: 使用默认值
 - **WHEN** 系统提示输入 base 目录，用户直接按回车
@@ -35,7 +43,11 @@
 
 #### Scenario: 添加资源流程
 - **WHEN** 用户在交互模式中选择"添加资源"
-- **THEN** 系统依次提示：资源名称、provider 类型（从可用 provider 中选择）、API URL、token（支持 `${ENV_VAR}` 语法提示）、是否配置 SSH key（可选）
+- **THEN** 系统依次提示：资源名称、provider 类型（从 gitlab/github/generic 中选择）、API URL、token（支持 `${ENV_VAR}` 语法提示）、是否配置 SSH key（可选）
+
+#### Scenario: 选择 generic provider 时无默认 URL
+- **WHEN** 用户在添加资源流程中选择 provider 为 `generic`
+- **THEN** 系统提示输入 URL 时不设默认值
 
 #### Scenario: 添加资源时配置 SSH key
 - **WHEN** 用户选择配置 SSH key 并输入 `~/.ssh/id_work`

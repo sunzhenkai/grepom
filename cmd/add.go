@@ -35,10 +35,10 @@ var addResourceCmd = &cobra.Command{
 	Long:  "Add a GitLab or GitHub API resource with connection and authentication details.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if addResProvider == "" {
-			return fmt.Errorf("--provider is required (gitlab or github)")
+			return fmt.Errorf("--provider is required (gitlab, github, or generic)")
 		}
-		if addResProvider != "gitlab" && addResProvider != "github" {
-			return fmt.Errorf("unsupported provider: %s (use gitlab or github)", addResProvider)
+		if addResProvider != "gitlab" && addResProvider != "github" && addResProvider != "generic" {
+			return fmt.Errorf("unsupported provider: %s (use gitlab, github, or generic)", addResProvider)
 		}
 		if addResURL == "" {
 			return fmt.Errorf("--url is required")
@@ -70,7 +70,7 @@ var addResourceCmd = &cobra.Command{
 
 func init() {
 	addResourceCmd.Flags().StringVarP(&addResName, "name", "n", "", "resource name (required)")
-	addResourceCmd.Flags().StringVarP(&addResProvider, "provider", "p", "", "provider type (gitlab or github)")
+	addResourceCmd.Flags().StringVarP(&addResProvider, "provider", "p", "", "provider type (gitlab, github, or generic)")
 	addResourceCmd.Flags().StringVarP(&addResURL, "url", "u", "", "API base URL")
 	addResourceCmd.Flags().StringVarP(&addResToken, "token", "k", "", "API token (supports ${ENV_VAR} syntax)")
 	addResourceCmd.Flags().StringVarP(&addResSSHKey, "ssh-key", "s", "", "SSH private key path for clone (supports ~/")
