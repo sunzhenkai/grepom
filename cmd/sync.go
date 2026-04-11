@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wii/grepom/config"
 	"github.com/wii/grepom/provider"
+	"github.com/wii/grepom/repo"
 )
 
 var (
@@ -62,7 +63,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 			groupsToProcess = append(groupsToProcess, g)
 		}
 
-		var totalRepos, totalNewRepos int
+		var totalRepos, totalNewRepos, totalExcluded int
 
 		for _, g := range groupsToProcess {
 			res, ok := cfg.Resources[g.Resource]
@@ -117,14 +118,23 @@ Only new repos are added to the config; existing entries are never removed.`,
 				fmt.Printf("group %q: found %d repos\n", g.Name, len(repos))
 			}
 
-			// Convert discovered repos to GroupRepo entries
+			// Convert discovered repos to GroupRepo entries, skipping excluded repos
 			var newGroupRepos []config.GroupRepo
+			var excludedCount int
 			for _, r := range repos {
+				if repo.IsExcluded(g.ExcludeRepos, r.Name) {
+					excludedCount++
+					continue
+				}
 				newGroupRepos = append(newGroupRepos, config.GroupRepo{
 					Name: r.Name,
 					URL:  r.CloneURL,
 					Path: r.Path,
 				})
+			}
+			totalExcluded += excludedCount
+			if verbose && excludedCount > 0 {
+				fmt.Printf("  skipped %d excluded repos in group %q\n", excludedCount, g.Name)
 			}
 
 			// Save discovered repos to this group in config
@@ -141,7 +151,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 			}
 		}
 
-		fmt.Printf("sync complete: %d repos discovered, %d new repos saved\n", totalRepos, totalNewRepos)
+		fmt.Printf("sync complete: %d repos discovered, %d excluded, %d new repos saved\n", totalRepos, totalExcluded, totalNewRepos)
 		if totalNewRepos > 0 {
 			fmt.Println("Run 'grepom clone' to clone new repositories.")
 		}

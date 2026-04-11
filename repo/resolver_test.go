@@ -824,3 +824,29 @@ func TestResolve_GroupDisabledTakesPriorityOverExcludeRepos(t *testing.T) {
 		}
 	}
 }
+
+func TestIsExcluded(t *testing.T) {
+	tests := []struct {
+		name         string
+		excludeRepos []string
+		repoName     string
+		want         bool
+	}{
+		{"empty list", nil, "app", false},
+		{"empty list match", []string{}, "app", false},
+		{"single match", []string{"app"}, "app", true},
+		{"single no match", []string{"other"}, "app", false},
+		{"multiple match first", []string{"app", "other"}, "app", true},
+		{"multiple match last", []string{"other", "app"}, "app", true},
+		{"multiple no match", []string{"other", "third"}, "app", false},
+		{"case sensitive", []string{"App"}, "app", false},
+		{"partial name no match", []string{"app-old"}, "app", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsExcluded(tt.excludeRepos, tt.repoName); got != tt.want {
+				t.Errorf("IsExcluded() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

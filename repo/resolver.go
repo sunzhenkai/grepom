@@ -72,7 +72,7 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 				pRepo.DisabledReason = "disabled"
 			} else if !g.IsEnabled() {
 				pRepo.DisabledReason = "disabled"
-			} else if isExcluded(g.ExcludeRepos, gr.Name) {
+			} else if IsExcluded(g.ExcludeRepos, gr.Name) {
 				pRepo.DisabledReason = "excluded"
 			}
 
@@ -129,8 +129,8 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 	return allRepos
 }
 
-// isExcluded checks if a repo name is in the exclude list.
-func isExcluded(excludeRepos []string, repoName string) bool {
+// IsExcluded checks if a repo name is in the exclude list.
+func IsExcluded(excludeRepos []string, repoName string) bool {
 	for _, name := range excludeRepos {
 		if name == repoName {
 			return true

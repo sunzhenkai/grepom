@@ -174,7 +174,11 @@ func runListGroups(cfg *config.Config) error {
 // runListRemoteRepos 通过 provider API 实时查询远程仓库列表并展示
 func runListRemoteRepos(cfg *config.Config) error {
 	// 收集需要查询的 groups
-	var groupsToProcess []config.Group
+	type groupInfo struct {
+		group      config.Group
+		isDisabled bool // group 或 resource 被禁用
+	}
+	var groupsToProcess []groupInfo
 	for _, g := range cfg.Groups {
 		if listGroup != "" && g.Name != listGroup {
 			continue
@@ -182,7 +186,20 @@ func runListRemoteRepos(cfg *config.Config) error {
 		if listResource != "" && g.Resource != listResource {
 			continue
 		}
-		groupsToProcess = append(groupsToProcess, g)
+		// 非 --all 模式下跳过禁用的 group 和 resource
+		if !listAll {
+			if !g.IsEnabled() {
+				continue
+			}
+			if res, ok := cfg.Resources[g.Resource]; ok && !res.IsEnabled() {
+				continue
+			}
+		}
+		isDisabled := !g.IsEnabled()
+		if res, ok := cfg.Resources[g.Resource]; ok && !res.IsEnabled() {
+			isDisabled = true
+		}
+		groupsToProcess = append(groupsToProcess, groupInfo{group: g, isDisabled: isDisabled})
 	}
 
 	if len(groupsToProcess) == 0 {
@@ -192,16 +209,19 @@ func runListRemoteRepos(cfg *config.Config) error {
 
 	// 查询远程仓库
 	type remoteEntry struct {
-		name     string
-		path     string
-		group    string
-		resource string
-		cloneURL string
+		name       string
+		path       string
+		group      string
+		resource   string
+		cloneURL   string
+		isExcluded bool
+		isDisabled bool
 	}
 
 	var entries []remoteEntry
 
-	for _, g := range groupsToProcess {
+	for _, gi := range groupsToProcess {
+		g := gi.group
 		res, ok := cfg.Resources[g.Resource]
 		if !ok {
 			fmt.Fprintf(os.Stderr, "error: group %q: resource %q not found\n", g.Name, g.Resource)
@@ -241,16 +261,23 @@ func runListRemoteRepos(cfg *config.Config) error {
 		}
 
 		for _, r := range repos {
+			excluded := repo.IsExcluded(g.ExcludeRepos, r.Name)
+			// 非 --all 模式下跳过被排除的仓库
+			if !listAll && excluded {
+				continue
+			}
 			cloneURL := r.CloneURL
 			if cloneURL == "" {
 				cloneURL = r.SSHURL
 			}
 			entries = append(entries, remoteEntry{
-				name:     r.Name,
-				path:     r.Path,
-				group:    g.Name,
-				resource: g.Resource,
-				cloneURL: cloneURL,
+				name:       r.Name,
+				path:       r.Path,
+				group:      g.Name,
+				resource:   g.Resource,
+				cloneURL:   cloneURL,
+				isExcluded: excluded,
+				isDisabled: gi.isDisabled,
 			})
 		}
 	}
@@ -265,7 +292,15 @@ func runListRemoteRepos(cfg *config.Config) error {
 	fmt.Fprintln(w, "NAME\tPATH\tGROUP\tRESOURCE\tCLONE_URL")
 
 	for _, e := range entries {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", e.name, e.path, e.group, e.resource, e.cloneURL)
+		name := e.name
+		if listAll {
+			if e.isDisabled {
+				name = name + " [disabled]"
+			} else if e.isExcluded {
+				name = name + " [excluded]"
+			}
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, e.path, e.group, e.resource, e.cloneURL)
 	}
 	w.Flush()
 
