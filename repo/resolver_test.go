@@ -825,6 +825,162 @@ func TestResolve_GroupDisabledTakesPriorityOverExcludeRepos(t *testing.T) {
 	}
 }
 
+func TestResolve_GroupNoResource(t *testing.T) {
+	cfg := &config.Config{
+		Base:      "/home/user/projects",
+		Resources: map[string]config.Resource{},
+		Groups: []config.Group{
+			{
+				Name: "tools", LocalPath: "./tools",
+				Repos: []config.GroupRepo{
+					{Name: "my-script", URL: "git@github.com:user/my-script.git", Path: "my-script"},
+					{Name: "my-lib", URL: "https://github.com/user/my-lib.git", Path: "my-lib"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos, got %d", len(repos))
+	}
+
+	r1 := repos[0]
+	if r1.Name != "my-script" {
+		t.Errorf("expected name 'my-script', got: %s", r1.Name)
+	}
+	if r1.CloneURL != "git@github.com:user/my-script.git" {
+		t.Errorf("expected CloneURL from repo url, got: %s", r1.CloneURL)
+	}
+	if r1.SSHURL != "git@github.com:user/my-script.git" {
+		t.Errorf("expected SSHURL from repo url, got: %s", r1.SSHURL)
+	}
+	if r1.GroupName != "tools" {
+		t.Errorf("expected GroupName 'tools', got: %s", r1.GroupName)
+	}
+	if r1.Resource != "" {
+		t.Errorf("expected empty Resource, got: %s", r1.Resource)
+	}
+	if r1.Token != "" {
+		t.Errorf("expected no Token, got: %s", r1.Token)
+	}
+}
+
+func TestResolve_GroupNoResourceDisabled(t *testing.T) {
+	cfg := &config.Config{
+		Base:      "/home/user/projects",
+		Resources: map[string]config.Resource{},
+		Groups: []config.Group{
+			{
+				Name: "tools", LocalPath: "./tools",
+				Enabled: boolPtr(false),
+				Repos: []config.GroupRepo{
+					{Name: "my-script", URL: "git@github.com:user/my-script.git", Path: "my-script"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 0 {
+		t.Fatalf("expected 0 repos (group disabled), got %d", len(repos))
+	}
+}
+
+func TestResolve_StandaloneRepoNoResource(t *testing.T) {
+	cfg := &config.Config{
+		Base:      "/home/user/projects",
+		Resources: map[string]config.Resource{},
+		Repos: []config.Repo{
+			{Name: "dotfiles", URL: "git@github.com:user/dotfiles.git", LocalPath: "./dotfiles"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+
+	r := repos[0]
+	if r.Name != "dotfiles" {
+		t.Errorf("expected name 'dotfiles', got: %s", r.Name)
+	}
+	if r.CloneURL != "git@github.com:user/dotfiles.git" {
+		t.Errorf("expected CloneURL from url field, got: %s", r.CloneURL)
+	}
+	if r.Resource != "" {
+		t.Errorf("expected empty Resource, got: %s", r.Resource)
+	}
+	if r.Token != "" {
+		t.Errorf("expected no Token, got: %s", r.Token)
+	}
+}
+
+func TestResolve_MixedResourceAndNoResource(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+				},
+			},
+			{
+				Name: "tools", LocalPath: "./tools",
+				Repos: []config.GroupRepo{
+					{Name: "my-script", URL: "git@github.com:user/my-script.git", Path: "my-script"},
+				},
+			},
+		},
+		Repos: []config.Repo{
+			{Name: "notes", URL: "git@github.com:user/notes.git", LocalPath: "./notes"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 3 {
+		t.Fatalf("expected 3 repos, got %d", len(repos))
+	}
+
+	// Verify the no-resource repos have empty Resource
+	for _, r := range repos {
+		if r.Name == "my-script" || r.Name == "notes" {
+			if r.Resource != "" {
+				t.Errorf("expected empty Resource for %s, got: %s", r.Name, r.Resource)
+			}
+		}
+		if r.Name == "app" {
+			if r.Resource != "gl" {
+				t.Errorf("expected Resource 'gl' for app, got: %s", r.Resource)
+			}
+		}
+	}
+}
+
 func TestIsExcluded(t *testing.T) {
 	tests := []struct {
 		name         string

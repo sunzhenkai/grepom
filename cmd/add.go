@@ -96,11 +96,8 @@ var addGroupCmd = &cobra.Command{
 		if addGroupName == "" {
 			return fmt.Errorf("--name is required")
 		}
-		if addGroupResource == "" {
-			return fmt.Errorf("--resource is required")
-		}
-		if addGroupPath == "" {
-			return fmt.Errorf("--path is required")
+		if addGroupResource == "" && addGroupPath == "" {
+			// Allow no resource (manual management), but when resource is set, path is required later
 		}
 
 		path, err := resolvedConfigPath()
@@ -111,8 +108,10 @@ var addGroupCmd = &cobra.Command{
 		// Pre-add validation: check resource exists and name uniqueness
 		cfg, err := loadExistingConfig(path)
 		if err == nil {
-			if _, ok := cfg.Resources[addGroupResource]; !ok {
-				return fmt.Errorf("resource %q not found", addGroupResource)
+			if addGroupResource != "" {
+				if _, ok := cfg.Resources[addGroupResource]; !ok {
+					return fmt.Errorf("resource %q not found", addGroupResource)
+				}
 			}
 			for _, g := range cfg.Groups {
 				if g.Name == addGroupName {
@@ -210,15 +209,13 @@ var addRepoCmd = &cobra.Command{
 			}
 			fmt.Printf("Added repo %s to group %s in %s\n", addRepoName, addRepoGroup, path)
 		} else {
-			// Standalone repo: validate resource and name uniqueness
-			if addRepoResource == "" {
-				return fmt.Errorf("--resource is required")
-			}
-
+			// Standalone repo: resource is optional when url is provided
 			cfg, err := loadExistingConfig(path)
 			if err == nil {
-				if _, ok := cfg.Resources[addRepoResource]; !ok {
-					return fmt.Errorf("resource %q not found", addRepoResource)
+				if addRepoResource != "" {
+					if _, ok := cfg.Resources[addRepoResource]; !ok {
+						return fmt.Errorf("resource %q not found", addRepoResource)
+					}
 				}
 				for _, r := range cfg.Repos {
 					if r.Name == addRepoName {

@@ -289,14 +289,13 @@ func (c *Config) validate() error {
 		}
 		groupNames[g.Name] = true
 
-		if g.Resource == "" {
-			return fmt.Errorf("config: group %q: 'resource' field is required", g.Name)
+		if g.Resource != "" {
+			if _, ok := c.Resources[g.Resource]; !ok {
+				return fmt.Errorf("config: group %q: resource %q not found", g.Name, g.Resource)
+			}
 		}
-		if _, ok := c.Resources[g.Resource]; !ok {
-			return fmt.Errorf("config: group %q: resource %q not found", g.Name, g.Resource)
-		}
-		if g.Path == "" {
-			return fmt.Errorf("config: group %q: 'path' field is required", g.Name)
+		if g.Resource != "" && g.Path == "" {
+			return fmt.Errorf("config: group %q: 'path' field is required when resource is set", g.Name)
 		}
 
 		// Default local_path to ./<name>
@@ -305,21 +304,25 @@ func (c *Config) validate() error {
 			c.Groups[i] = g
 		}
 
-		// Validate group repos
-		for j, r := range g.Repos {
-			if !strings.HasPrefix(r.Path, g.Path) {
-				return fmt.Errorf("config: group %q: repo[%d] path %q does not start with group path %q", g.Name, j, r.Path, g.Path)
+		// Validate group repos (only when group has a path)
+		if g.Path != "" {
+			for j, r := range g.Repos {
+				if r.Path != "" && !strings.HasPrefix(r.Path, g.Path) {
+					return fmt.Errorf("config: group %q: repo[%d] path %q does not start with group path %q", g.Name, j, r.Path, g.Path)
+				}
 			}
 		}
 	}
 
 	// Validate independent repos
 	for i, r := range c.Repos {
-		if r.Resource == "" {
-			return fmt.Errorf("config: repos[%d]: 'resource' field is required", i)
+		if r.Resource == "" && r.URL == "" {
+			return fmt.Errorf("config: repos[%d]: 'resource' or 'url' field is required", i)
 		}
-		if _, ok := c.Resources[r.Resource]; !ok {
-			return fmt.Errorf("config: repos[%d]: resource %q not found", i, r.Resource)
+		if r.Resource != "" {
+			if _, ok := c.Resources[r.Resource]; !ok {
+				return fmt.Errorf("config: repos[%d]: resource %q not found", i, r.Resource)
+			}
 		}
 		// Default local_path to ./<name>
 		if r.LocalPath == "" {

@@ -818,8 +818,8 @@ func interactiveClone() {
 		progress := NewProgressRenderer("cloning", len(toClone))
 		defer progress.Done()
 
-		results := gitpkg.CloneAll(concurrency, toClone, func(completed, total int) {
-			progress.Update(completed)
+		results := gitpkg.CloneAll(concurrency, toClone, func(event gitpkg.ProgressEvent) {
+			progress.Handle(event)
 		})
 		PrintCloneSummary(results, nil)
 	} else {
@@ -959,8 +959,8 @@ func interactivePull() {
 		progress := NewProgressRenderer("pulling", len(toPull))
 		defer progress.Done()
 
-		results := gitpkg.PullAll(concurrency, toPull, func(completed, total int) {
-			progress.Update(completed)
+		results := gitpkg.PullAll(concurrency, toPull, func(event gitpkg.ProgressEvent) {
+			progress.Handle(event)
 		})
 		PrintPullSummary(results, skipped, nil)
 	} else {

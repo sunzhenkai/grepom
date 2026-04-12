@@ -149,17 +149,9 @@ func runParallelPull(tasks []gitpkg.PullTask, skipped int) error {
 	progress := NewProgressRenderer("pulling", len(tasks))
 	defer progress.Done()
 
-	results := gitpkg.PullAll(pullConcurrency, tasks, func(completed, total int) {
-		progress.Update(completed)
+	results := gitpkg.PullAll(pullConcurrency, tasks, func(event gitpkg.ProgressEvent) {
+		progress.Handle(event)
 	})
-
-	if !progress.isTTY {
-		for _, r := range results {
-			if r.Err != nil {
-				fmt.Fprintf(os.Stderr, "error pulling %s: %v\n", r.Repo.Path, r.Err)
-			}
-		}
-	}
 
 	PrintPullSummary(results, skipped, nil)
 	return nil

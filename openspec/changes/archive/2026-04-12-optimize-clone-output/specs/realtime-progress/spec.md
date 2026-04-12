@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: 实时进度回调
 `CloneAll` 和 `PullAll` SHALL 接受 `ProgressFunc` 回调参数。回调签名 SHALL 为 `func(ProgressEvent)`，其中 `ProgressEvent` 包含事件类型（Start/Complete）、仓库名、已完成数、总数和错误信息。每开始处理一个仓库时 SHALL 触发 Start 事件，每完成一个仓库时 SHALL 触发 Complete 事件。

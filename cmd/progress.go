@@ -58,12 +58,21 @@ func isTTYViaProc() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
+// inflightTask 记录一个正在处理的任务。
+type inflightTask struct {
+	name string
+}
+
 // ProgressRenderer handles real-time progress display for batch operations.
+// In TTY mode, it renders a multi-line progress area showing all in-flight tasks.
+// In non-TTY mode, it prints each completed result on its own line.
 type ProgressRenderer struct {
 	isTTY     bool
 	total     int
 	completed int
 	action    string // "cloning" or "pulling"
+	inflight  []inflightTask
+	rendered  int // 上次渲染的行数，用于清除
 }
 
 // NewProgressRenderer creates a progress renderer for the given action and total count.
@@ -75,25 +84,105 @@ func NewProgressRenderer(action string, total int) *ProgressRenderer {
 	}
 }
 
-// Update prints the current progress line.
-// In TTY mode, it uses \r to overwrite; in non-TTY mode, it prints a new line.
-func (p *ProgressRenderer) Update(completed int) {
-	p.completed = completed
-	line := fmt.Sprintf("[%d/%d] %s...", completed, p.total, p.action)
-	if p.isTTY {
-		fmt.Fprintf(os.Stdout, "\r%s", line)
-	} else {
-		fmt.Fprintln(os.Stdout, line)
+// Handle processes a progress event and updates the display.
+// Start events add the repo to the in-flight list; Complete events remove it.
+func (p *ProgressRenderer) Handle(event git.ProgressEvent) {
+	switch event.Type {
+	case git.ProgressStart:
+		p.inflight = append(p.inflight, inflightTask{name: event.RepoName})
+		if p.isTTY {
+			p.renderTTY()
+		}
+	case git.ProgressComplete:
+		// 从 in-flight 列表中移除
+		for i, t := range p.inflight {
+			if t.name == event.RepoName {
+				p.inflight = append(p.inflight[:i], p.inflight[i+1:]...)
+				break
+			}
+		}
+		p.completed = event.Completed
+		if p.isTTY {
+			p.renderTTY()
+		} else {
+			// 非 TTY：逐行输出完成结果
+			if event.Err != nil {
+				fmt.Fprintf(os.Stdout, "✗ %s: %v\n", event.RepoName, event.Err)
+			} else {
+				fmt.Fprintf(os.Stdout, "✓ %s\n", event.RepoName)
+			}
+		}
 	}
 }
 
-// Done clears the progress line (TTY mode) and prints final status.
-func (p *ProgressRenderer) Done() {
-	if p.isTTY && p.total > 0 {
-		// Clear the progress line
-		fmt.Fprintf(os.Stdout, "\r%s\r", spaces(len(fmt.Sprintf("[%d/%d] %s...", p.completed, p.total, p.action))))
-		fmt.Fprintln(os.Stdout)
+// renderTTY 渲染多行 TTY 进度区域。
+// 第一行：[N/M] action...
+// 后续行：  action repo-name...
+func (p *ProgressRenderer) renderTTY() {
+	// 计算需要渲染的总行数
+	lines := 1 + len(p.inflight) // 摘要行 + in-flight 行
+
+	// 如果之前渲染过行，先将光标移回到第一行位置
+	if p.rendered > 0 {
+		// 光标上移 (rendered - 1) 行到第一行，然后 \r 回到行首
+		if p.rendered > 1 {
+			fmt.Fprintf(os.Stdout, "\033[%dA", p.rendered-1)
+		}
+		fmt.Fprint(os.Stdout, "\r")
 	}
+
+	// 渲染第一行：进度摘要
+	header := fmt.Sprintf("[%d/%d] %s...", p.completed, p.total, p.action)
+	fmt.Fprintf(os.Stdout, "%s%s", header, spaces(maxWidth-paddedLen(header)))
+
+	// 渲染 in-flight 行
+	for _, t := range p.inflight {
+		fmt.Fprint(os.Stdout, "\n")
+		line := fmt.Sprintf("  %s %s...", p.action, t.name)
+		fmt.Fprintf(os.Stdout, "%s%s", line, spaces(maxWidth-paddedLen(line)))
+	}
+
+	p.rendered = lines
+}
+
+// Done clears the progress area (TTY mode) and ensures output continues on a new line.
+func (p *ProgressRenderer) Done() {
+	if p.isTTY && p.rendered > 0 {
+		// 将光标移回进度区域第一行
+		if p.rendered > 1 {
+			fmt.Fprintf(os.Stdout, "\033[%dA", p.rendered-1)
+		}
+		fmt.Fprint(os.Stdout, "\r")
+		// 用空行覆盖所有已渲染的行
+		for i := 0; i < p.rendered; i++ {
+			fmt.Fprintf(os.Stdout, "%s\r", spaces(maxWidth))
+			if i < p.rendered-1 {
+				fmt.Fprint(os.Stdout, "\n")
+			}
+		}
+		fmt.Fprintln(os.Stdout)
+		p.rendered = 0
+	}
+}
+
+// maxWidth 是进度行的最大宽度，用于计算清除空格。
+const maxWidth = 120
+
+// paddedLen 返回字符串的字节长度（用于计算清除空格数）。
+func paddedLen(s string) int {
+	return len(s)
+}
+
+// spaces 返回 n 个空格的字符串。
+func spaces(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	s := make([]byte, n)
+	for i := range s {
+		s[i] = ' '
+	}
+	return string(s)
 }
 
 // PrintCloneSummary outputs the clone operation summary.
@@ -181,12 +270,4 @@ func PrintPullSummary(results []git.PullResult, skipped int, writer io.Writer) {
 			fmt.Fprintf(writer, "  %s %s: %v\n", mark, r.Repo.Path, r.Err)
 		}
 	}
-}
-
-func spaces(n int) string {
-	s := make([]byte, n)
-	for i := range s {
-		s[i] = ' '
-	}
-	return string(s)
 }

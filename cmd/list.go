@@ -186,6 +186,11 @@ func runListRemoteRepos(cfg *config.Config) error {
 		if listResource != "" && g.Resource != listResource {
 			continue
 		}
+		// Skip groups without resource for remote listing
+		if g.Resource == "" {
+			fmt.Printf("group %q: 未绑定 resource，跳过远程列表查询\n", g.Name)
+			continue
+		}
 		// 非 --all 模式下跳过禁用的 group 和 resource
 		if !listAll {
 			if !g.IsEnabled() {

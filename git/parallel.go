@@ -8,9 +8,26 @@ import (
 	"github.com/wii/grepom/provider"
 )
 
-// ProgressFunc is called each time a parallel task completes.
-// completed is the number of tasks done so far, total is the total task count.
-type ProgressFunc func(completed, total int)
+// ProgressEventType 表示进度事件的类型。
+type ProgressEventType int
+
+const (
+	ProgressStart    ProgressEventType = iota // 任务开始处理
+	ProgressComplete                          // 任务处理完成
+)
+
+// ProgressEvent 表示一个进度事件，包含事件类型、仓库名、已完成数、总数和错误信息。
+type ProgressEvent struct {
+	Type      ProgressEventType
+	RepoName  string // 正在处理的仓库名
+	Completed int    // 已完成的任务数
+	Total     int    // 总任务数
+	Err       error  // 仅 Complete 事件，nil 表示成功
+}
+
+// ProgressFunc is called when a parallel task starts or completes.
+// The event contains the type (Start/Complete), repo name, and progress counts.
+type ProgressFunc func(ProgressEvent)
 
 // CloneTask represents a single clone operation to be executed.
 type CloneTask struct {
@@ -48,6 +65,13 @@ func CloneAll(concurrency int, tasks []CloneTask, onProgress ProgressFunc) []Clo
 		go func() {
 			defer wg.Done()
 			for task := range jobs {
+				// 通知任务开始
+				if onProgress != nil {
+					onProgress(ProgressEvent{
+						Type:     ProgressStart,
+						RepoName: task.Repo.Name,
+					})
+				}
 				var buf bytes.Buffer
 				opts := CloneOptions{
 					Token:          task.Repo.Token,
@@ -87,7 +111,13 @@ func CloneAll(concurrency int, tasks []CloneTask, onProgress ProgressFunc) []Clo
 		resultMap[r.FullPath] = r
 		completed++
 		if onProgress != nil {
-			onProgress(completed, len(tasks))
+			onProgress(ProgressEvent{
+				Type:      ProgressComplete,
+				RepoName:  r.Repo.Name,
+				Completed: completed,
+				Total:     len(tasks),
+				Err:       r.Err,
+			})
 		}
 	}
 
@@ -135,6 +165,13 @@ func PullAll(concurrency int, tasks []PullTask, onProgress ProgressFunc) []PullR
 		go func() {
 			defer wg.Done()
 			for task := range jobs {
+				// 通知任务开始
+				if onProgress != nil {
+					onProgress(ProgressEvent{
+						Type:     ProgressStart,
+						RepoName: task.Repo.Name,
+					})
+				}
 				err := Pull(task.FullPath)
 				results <- PullResult{
 					Repo:     task.Repo,
@@ -164,7 +201,13 @@ func PullAll(concurrency int, tasks []PullTask, onProgress ProgressFunc) []PullR
 		resultMap[r.FullPath] = r
 		completed++
 		if onProgress != nil {
-			onProgress(completed, len(tasks))
+			onProgress(ProgressEvent{
+				Type:      ProgressComplete,
+				RepoName:  r.Repo.Name,
+				Completed: completed,
+				Total:     len(tasks),
+				Err:       r.Err,
+			})
 		}
 	}
 

@@ -50,6 +50,11 @@ Only new repos are added to the config; existing entries are never removed.`,
 			if syncResource != "" && g.Resource != syncResource {
 				continue
 			}
+			// Skip groups without resource (manual management)
+			if g.Resource == "" {
+				fmt.Printf("group %q: 未绑定 resource，跳过 sync\n", g.Name)
+				continue
+			}
 			// Skip disabled groups (4.1)
 			if !g.IsEnabled() {
 				config.Verbose("skipping disabled group %q", g.Name)

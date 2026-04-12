@@ -678,7 +678,7 @@ func writeFile(t *testing.T, path, content string) {
 // --- CloneAll/PullAll tests ---
 
 func TestCloneAll_Empty(t *testing.T) {
-	results := CloneAll(4, nil)
+	results := CloneAll(4, nil, nil)
 	if results != nil {
 		t.Error("expected nil for empty tasks")
 	}
@@ -686,27 +686,27 @@ func TestCloneAll_Empty(t *testing.T) {
 
 func TestCloneAll_PreservesOrder(t *testing.T) {
 	// Test with 0 concurrency (falls back to 1) and empty tasks
-	results := CloneAll(0, nil)
+	results := CloneAll(0, nil, nil)
 	if results != nil {
 		t.Error("expected nil for empty tasks with 0 concurrency")
 	}
 
 	// Test with invalid concurrency still works
-	results = CloneAll(-1, []CloneTask{})
+	results = CloneAll(-1, []CloneTask{}, nil)
 	if results != nil {
 		t.Error("expected nil for empty tasks with negative concurrency")
 	}
 }
 
 func TestPullAll_Empty(t *testing.T) {
-	results := PullAll(4, nil)
+	results := PullAll(4, nil, nil)
 	if results != nil {
 		t.Error("expected nil for empty tasks")
 	}
 }
 
 func TestPullAll_InvalidConcurrency(t *testing.T) {
-	results := PullAll(0, nil)
+	results := PullAll(0, nil, nil)
 	if results != nil {
 		t.Error("expected nil for empty tasks with 0 concurrency")
 	}

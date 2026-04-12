@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: sync 命令
 `sync` 命令 SHALL 从远程 API 发现仓库信息，将新发现的条目追加到对应 group 的 repos 字段。sync 命令 SHALL NOT 执行 clone 或 pull 操作。sync 命令 SHALL 跳过 `enabled: false` 的 group，不对禁用的 group 执行远程发现。sync 命令 SHALL 跳过未绑定 resource 的 group，不对手动管理的 group 执行远程发现，并输出提示信息。sync 命令 SHALL 在写入配置时保留 group 的 `exclude_repos` 列表，不被覆盖或清空。sync 命令 SHALL 在发现仓库后跳过匹配 group `exclude_repos` 列表的仓库，不将其写入配置。
 
@@ -48,45 +50,3 @@
 #### Scenario: 同步摘要包含被排除仓库数量
 - **WHEN** 用户运行 `grepom sync`，group `frontend` 的 `exclude_repos` 包含 2 个仓库，远程发现了 10 个仓库
 - **THEN** 系统的同步摘要中显示发现了 10 个仓库，但仅保存了 8 个（非排除的）新仓库
-
-### Requirement: sync 配置更新策略（只增不删）
-sync 命令在更新配置文件时 SHALL 仅追加新发现的 repo 条目到对应 group 的 repos 列表，不删除或修改已有条目。sync 命令 SHALL 在写入配置时保留 group 的 `exclude_repos` 列表。sync 命令 SHALL 在写入前过滤掉匹配 group `exclude_repos` 的新发现仓库。
-
-#### Scenario: 远程新增仓库
-- **WHEN** group `frontend` 下远程新增了 repo `new-app`
-- **THEN** 系统将 `new-app` 追加到 group `frontend` 的 repos 列表
-
-#### Scenario: Repo 已存在于 group repos
-- **WHEN** 远程 repo `shared-utils` 已存在于 group `frontend` 的 repos 列表中（按 URL 匹配）
-- **THEN** 系统不重复追加
-
-#### Scenario: 远程仓库被删除不影响配置
-- **WHEN** 远程某仓库已被删除，但配置文件中对应 group 的 repos 仍有该条目
-- **THEN** 系统不从配置中删除该 repo 条目
-
-#### Scenario: 非 recursive group 仅发现直接项目
-- **WHEN** GitLab group 配置为 `recursive: false`（或未设置）
-- **THEN** 系统仅发现该 group 直接包含的项目，不递归子 group
-
-#### Scenario: sync 保留 exclude_repos 配置
-- **WHEN** group `frontend` 的 `exclude_repos` 为 `["deprecated-app"]`，sync 发现新 repo 并写入配置
-- **THEN** 写入后的配置中 `exclude_repos` 仍为 `["deprecated-app"]`，不被清空或覆盖
-
-#### Scenario: sync 不写入被排除的仓库
-- **WHEN** group `frontend` 的 `exclude_repos` 为 `["deprecated-app"]`，远程新发现了 `deprecated-app`
-- **THEN** `deprecated-app` 不被写入配置文件
-
-#### Scenario: 已在配置中的被排除仓库不受 sync 影响
-- **WHEN** group `frontend` 的 repos 中已有 `deprecated-app`，`exclude_repos` 为 `["deprecated-app"]`
-- **THEN** sync 不删除已有的 `deprecated-app` 条目（sync 只增不删策略不变）
-
-### Requirement: sync 并发写入保护
-当多个 sync 实例同时运行时，系统 SHALL 使用文件锁防止配置文件的并发写入冲突。
-
-#### Scenario: 多个 sync 实例同时运行
-- **WHEN** 两个 `grepom sync` 进程同时运行并都需要写入配置文件
-- **THEN** 第二个进程等待第一个进程完成写入后再执行自己的写入，不会导致配置文件损坏或数据丢失
-
-#### Scenario: 获取锁超时
-- **WHEN** sync 进程无法在合理时间内获取配置文件锁
-- **THEN** 系统报告错误并退出，提示用户另一个 sync 正在运行

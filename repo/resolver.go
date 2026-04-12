@@ -31,99 +31,144 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 	var allRepos []provider.Repo
 
 	for _, g := range r.cfg.Groups {
-		res, ok := r.cfg.Resources[g.Resource]
-		if !ok {
-			continue
+		var res *config.Resource
+		if g.Resource != "" {
+			r, ok := r.cfg.Resources[g.Resource]
+			if !ok {
+				continue
+			}
+			res = &r
 		}
 
-		// Determine token: group override > resource default
-		token := g.Token
-		hasGroupToken := g.Token != ""
-		if token == "" {
-			token = res.Token
-		}
+		if res != nil {
+			// Determine token: group override > resource default
+			token := g.Token
+			hasGroupToken := g.Token != ""
+			if token == "" {
+				token = res.Token
+			}
 
-		// Determine SSHKey: group override > resource default
-		sshKey := g.SSHKey
-		hasGroupSSHKey := g.SSHKey != ""
-		if sshKey == "" {
-			sshKey = res.SSHKey
-		}
+			// Determine SSHKey: group override > resource default
+			sshKey := g.SSHKey
+			hasGroupSSHKey := g.SSHKey != ""
+			if sshKey == "" {
+				sshKey = res.SSHKey
+			}
 
-		for _, gr := range g.Repos {
-			localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
+			for _, gr := range g.Repos {
+				localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
+
+				pRepo := provider.Repo{
+					Name:           gr.Name,
+					CloneURL:       res.HTTPSURL(gr.Path),
+					SSHURL:         deriveSSHURL(gr.Path, res.URL),
+					Path:           localPath,
+					Provider:       res.Provider,
+					Resource:       g.Resource,
+					GroupName:      g.Name,
+					Token:          token,
+					SSHKey:         sshKey,
+					HasGroupToken:  hasGroupToken,
+					HasGroupSSHKey: hasGroupSSHKey,
+				}
+
+				// Determine exclusion reason (priority: resource > group > exclude_repos)
+				if !res.IsEnabled() {
+					pRepo.DisabledReason = "disabled"
+				} else if !g.IsEnabled() {
+					pRepo.DisabledReason = "disabled"
+				} else if IsExcluded(g.ExcludeRepos, gr.Name) {
+					pRepo.DisabledReason = "excluded"
+				}
+
+				allRepos = append(allRepos, pRepo)
+			}
+		} else {
+			// No resource: use repo's url directly
+			for _, gr := range g.Repos {
+				localPath := config.ResolveGroupRepoPath(r.cfg.Base, g.LocalPath, g.Path, gr.Path)
+
+				pRepo := provider.Repo{
+					Name:      gr.Name,
+					CloneURL:  gr.URL,
+					SSHURL:    gr.URL,
+					Path:      localPath,
+					GroupName: g.Name,
+				}
+
+				// Check group disabled
+				if !g.IsEnabled() {
+					pRepo.DisabledReason = "disabled"
+				} else if IsExcluded(g.ExcludeRepos, gr.Name) {
+					pRepo.DisabledReason = "excluded"
+				}
+
+				allRepos = append(allRepos, pRepo)
+			}
+		}
+	}
+
+	for _, repo := range r.cfg.Repos {
+		localPath := config.ResolveRepoPath(r.cfg.Base, repo.LocalPath)
+
+		if repo.Resource != "" {
+			res, ok := r.cfg.Resources[repo.Resource]
+			if !ok {
+				continue
+			}
+
+			// Determine token: repo override > resource default
+			token := repo.Token
+			hasGroupToken := repo.Token != ""
+			if token == "" {
+				token = res.Token
+			}
+
+			// Determine SSHKey: repo override > resource default
+			sshKey := repo.SSHKey
+			hasGroupSSHKey := repo.SSHKey != ""
+			if sshKey == "" {
+				sshKey = res.SSHKey
+			}
+
+			repoPath := extractRepoPath(repo.URL)
 
 			pRepo := provider.Repo{
-				Name:           gr.Name,
-				CloneURL:       res.HTTPSURL(gr.Path),
-				SSHURL:         deriveSSHURL(gr.Path, res.URL),
+				Name:           repo.Name,
+				CloneURL:       res.HTTPSURL(repoPath),
+				SSHURL:         deriveSSHURL(repoPath, res.URL),
 				Path:           localPath,
 				Provider:       res.Provider,
-				Resource:       g.Resource,
-				GroupName:      g.Name,
+				Resource:       repo.Resource,
 				Token:          token,
 				SSHKey:         sshKey,
 				HasGroupToken:  hasGroupToken,
 				HasGroupSSHKey: hasGroupSSHKey,
 			}
 
-			// Determine exclusion reason (priority: resource > group > exclude_repos)
+			// Determine exclusion reason (priority: resource > repo)
 			if !res.IsEnabled() {
 				pRepo.DisabledReason = "disabled"
-			} else if !g.IsEnabled() {
+			} else if !repo.IsEnabled() {
 				pRepo.DisabledReason = "disabled"
-			} else if IsExcluded(g.ExcludeRepos, gr.Name) {
-				pRepo.DisabledReason = "excluded"
+			}
+
+			allRepos = append(allRepos, pRepo)
+		} else {
+			// No resource: use repo's url directly
+			pRepo := provider.Repo{
+				Name:      repo.Name,
+				CloneURL:  repo.URL,
+				SSHURL:    repo.URL,
+				Path:      localPath,
+			}
+
+			if !repo.IsEnabled() {
+				pRepo.DisabledReason = "disabled"
 			}
 
 			allRepos = append(allRepos, pRepo)
 		}
-	}
-
-	for _, repo := range r.cfg.Repos {
-		res, ok := r.cfg.Resources[repo.Resource]
-		if !ok {
-			continue
-		}
-
-		// Determine token: repo override > resource default
-		token := repo.Token
-		hasGroupToken := repo.Token != ""
-		if token == "" {
-			token = res.Token
-		}
-
-		// Determine SSHKey: repo override > resource default
-		sshKey := repo.SSHKey
-		hasGroupSSHKey := repo.SSHKey != ""
-		if sshKey == "" {
-			sshKey = res.SSHKey
-		}
-
-		localPath := config.ResolveRepoPath(r.cfg.Base, repo.LocalPath)
-		repoPath := extractRepoPath(repo.URL)
-
-		pRepo := provider.Repo{
-			Name:           repo.Name,
-			CloneURL:       res.HTTPSURL(repoPath),
-			SSHURL:         deriveSSHURL(repoPath, res.URL),
-			Path:           localPath,
-			Provider:       res.Provider,
-			Resource:       repo.Resource,
-			Token:          token,
-			SSHKey:         sshKey,
-			HasGroupToken:  hasGroupToken,
-			HasGroupSSHKey: hasGroupSSHKey,
-		}
-
-		// Determine exclusion reason (priority: resource > repo)
-		if !res.IsEnabled() {
-			pRepo.DisabledReason = "disabled"
-		} else if !repo.IsEnabled() {
-			pRepo.DisabledReason = "disabled"
-		}
-
-		allRepos = append(allRepos, pRepo)
 	}
 
 	return allRepos

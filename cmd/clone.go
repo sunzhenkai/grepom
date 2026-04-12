@@ -87,18 +87,9 @@ func runParallelClone(tasks []gitpkg.CloneTask) error {
 	progress := NewProgressRenderer("cloning", len(tasks))
 	defer progress.Done()
 
-	results := gitpkg.CloneAll(cloneConcurrency, tasks, func(completed, total int) {
-		progress.Update(completed)
+	results := gitpkg.CloneAll(cloneConcurrency, tasks, func(event gitpkg.ProgressEvent) {
+		progress.Handle(event)
 	})
-
-	// Print individual results in non-TTY mode
-	if !progress.isTTY {
-		for _, r := range results {
-			if r.Err != nil {
-				fmt.Fprintf(os.Stderr, "error cloning %s: %v\n", r.Repo.Path, r.Err)
-			}
-		}
-	}
 
 	PrintCloneSummary(results, nil)
 	return nil

@@ -1175,6 +1175,136 @@ groups:
 	}
 }
 
+func TestLoad_GroupNoResource_ManualMode(t *testing.T) {
+	content := `
+base: ~/projects
+groups:
+  - name: local-tools
+    local_path: ./tools
+    repos:
+      - name: my-script
+        url: git@github.com:user/my-script.git
+        path: my-script
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.Groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(cfg.Groups))
+	}
+	g := cfg.Groups[0]
+	if g.Name != "local-tools" {
+		t.Errorf("expected group name 'local-tools', got: %s", g.Name)
+	}
+	if g.Resource != "" {
+		t.Errorf("expected empty resource, got: %s", g.Resource)
+	}
+	if len(g.Repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(g.Repos))
+	}
+	if g.Repos[0].URL != "git@github.com:user/my-script.git" {
+		t.Errorf("unexpected repo URL: %s", g.Repos[0].URL)
+	}
+}
+
+func TestLoad_GroupNoResourceNoPath_Ok(t *testing.T) {
+	content := `
+base: ~/projects
+groups:
+  - name: my-group
+    repos:
+      - name: repo1
+        url: https://github.com/org/repo1.git
+        path: repo1
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load should succeed without resource and path: %v", err)
+	}
+	if cfg.Groups[0].LocalPath != "./my-group" {
+		t.Errorf("expected default local_path './my-group', got: %s", cfg.Groups[0].LocalPath)
+	}
+}
+
+func TestLoad_GroupWithResourceMissingPath_Error(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: frontend
+    resource: gl
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for group with resource but missing path")
+	}
+	if !strings.Contains(err.Error(), "path") {
+		t.Errorf("error should mention path, got: %v", err)
+	}
+}
+
+func TestLoad_RepoNoResourceWithURL_Ok(t *testing.T) {
+	content := `
+base: ~/projects
+repos:
+  - name: my-repo
+    url: git@github.com:user/my-repo.git
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load should succeed with url but no resource: %v", err)
+	}
+	if len(cfg.Repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(cfg.Repos))
+	}
+	if cfg.Repos[0].URL != "git@github.com:user/my-repo.git" {
+		t.Errorf("unexpected URL: %s", cfg.Repos[0].URL)
+	}
+	if cfg.Repos[0].LocalPath != "./my-repo" {
+		t.Errorf("expected default local_path './my-repo', got: %s", cfg.Repos[0].LocalPath)
+	}
+}
+
+func TestLoad_RepoNoResourceNoURL_Error(t *testing.T) {
+	content := `
+base: ~/projects
+repos:
+  - name: my-repo
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for repo without resource and url")
+	}
+	if !strings.Contains(err.Error(), "resource") || !strings.Contains(err.Error(), "url") {
+		t.Errorf("error should mention 'resource or url', got: %v", err)
+	}
+}
+
 func TestLoad_RepoEnabled(t *testing.T) {
 	content := `
 base: ~/projects
