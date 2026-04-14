@@ -87,7 +87,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 
 			serverURL := res.APIURL()
 
-			// GitLab: use Groups query; GitHub: use Orgs
+			// GitLab/Codeup: use Groups query; GitHub: use Orgs
 			var groups []provider.GroupQuery
 			var orgs []string
 			if res.Provider == "github" {
@@ -97,10 +97,11 @@ Only new repos are added to the config; existing entries are never removed.`,
 			}
 
 			params := provider.ListReposParams{
-				ServerURL: serverURL,
-				Token:     res.Token,
-				Groups:    groups,
-				Orgs:      orgs,
+				ServerURL:      serverURL,
+				Token:          res.Token,
+				Groups:         groups,
+				Orgs:           orgs,
+				OrganizationID: res.OrganizationID,
 			}
 
 			repos, err := p.ListRepos(context.Background(), params)

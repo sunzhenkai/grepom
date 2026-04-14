@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Resource 定义认证和连接信息
 系统 SHALL 支持在配置文件的 `resources` 字段下定义命名资源。每个资源包含 `provider`（gitlab、github、generic 或 codeup）、`url`（host 地址，可选 port，可选 `http://`/`https://` 前缀）和 `token`（认证令牌）。Resource SHALL 支持 `enabled` 布尔字段（默认 `true`）。`url` 字段可填写纯 host（如 `g.wii.pub`）或带协议前缀（如 `http://g.wii.pub`）。无协议前缀时系统以 auto 模式运行（先 HTTPS 后 HTTP）。`resources` 使用 YAML map 格式，key 为资源名称。
 

@@ -127,6 +127,70 @@ groups:
 	}
 }
 
+func TestLoad_CodeupResource(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  my-codeup:
+    provider: codeup
+    url: codeup.aliyun.com
+    token: test-token
+    organization_id: "60de7a6852743a5162b5f957"
+groups:
+  - name: solo
+    resource: my-codeup
+    path: wii/solo
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	res, ok := cfg.Resources["my-codeup"]
+	if !ok {
+		t.Fatal("resource my-codeup not found")
+	}
+	if res.Provider != "codeup" {
+		t.Errorf("expected provider codeup, got %s", res.Provider)
+	}
+	if res.OrganizationID != "60de7a6852743a5162b5f957" {
+		t.Errorf("expected organization_id '60de7a6852743a5162b5f957', got %s", res.OrganizationID)
+	}
+	if res.URL != "codeup.aliyun.com" {
+		t.Errorf("expected url 'codeup.aliyun.com', got %s", res.URL)
+	}
+}
+
+func TestLoad_CodeupMissingOrganizationID(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  my-codeup:
+    provider: codeup
+    url: codeup.aliyun.com
+    token: test-token
+groups:
+  - name: solo
+    resource: my-codeup
+    path: wii/solo
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for codeup without organization_id")
+	}
+	if !strings.Contains(err.Error(), "organization_id") {
+		t.Errorf("expected organization_id error, got: %v", err)
+	}
+}
+
 func TestLoad_UndefinedEnvVar(t *testing.T) {
 	content := `
 base: ~/projects

@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: list --remote 远程仓库查询
 `list` 命令 SHALL 支持 `--remote` 标志，当使用 `--remote` 时（默认 `--type repos`），系统通过 provider API 实时查询远程仓库列表并以表格形式展示。`list --remote` SHALL 默认过滤掉匹配 group `exclude_repos` 列表的仓库，不展示被排除的仓库。当同时使用 `--remote --all` 时，SHALL 展示所有仓库包括被排除的仓库，并为被排除的仓库标注 `[excluded]`。`list --remote` SHALL 跳过 `enabled: false` 的 group 和 resource（除非使用 `--all`）。
 

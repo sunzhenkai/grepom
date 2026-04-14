@@ -240,11 +240,12 @@ func runListRemoteRepos(cfg *config.Config) error {
 		}
 
 		params := provider.ListReposParams{
-			ServerURL: res.APIURL(),
-			Token:     res.Token,
+			ServerURL:      res.APIURL(),
+			Token:          res.Token,
+			OrganizationID: res.OrganizationID,
 		}
 
-		// GitLab: 使用 Groups 查询；GitHub: 使用 Orgs
+		// GitLab/Codeup: 使用 Groups 查询；GitHub: 使用 Orgs
 		if res.Provider == "github" {
 			params.Orgs = []string{g.Path}
 		} else {
@@ -351,8 +352,9 @@ func runListRemoteGroups(cfg *config.Config) error {
 		}
 
 		params := provider.ListGroupsParams{
-			ServerURL: rq.res.APIURL(),
-			Token:     rq.res.Token,
+			ServerURL:      rq.res.APIURL(),
+			Token:          rq.res.Token,
+			OrganizationID: rq.res.OrganizationID,
 		}
 
 		groups, err := p.ListGroups(context.Background(), params)

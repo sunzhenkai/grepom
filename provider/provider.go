@@ -33,10 +33,11 @@ type GroupQuery struct {
 
 // ListReposParams contains the parameters for listing repos from a provider.
 type ListReposParams struct {
-	ServerURL string
-	Token     string
-	Groups    []GroupQuery
-	Orgs      []string
+	ServerURL      string
+	Token          string
+	Groups         []GroupQuery
+	Orgs           []string
+	OrganizationID string // optional, used by Codeup provider
 }
 
 // RemoteGroup represents a remote group/org discovered from a provider API.
@@ -48,8 +49,9 @@ type RemoteGroup struct {
 
 // ListGroupsParams contains the parameters for listing groups from a provider.
 type ListGroupsParams struct {
-	ServerURL string
-	Token     string
+	ServerURL      string
+	Token          string
+	OrganizationID string // optional, used by Codeup provider
 }
 
 // Provider is the interface for remote repository providers.

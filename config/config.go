@@ -40,12 +40,13 @@ type Config struct {
 
 // Resource defines authentication and connection information for a remote provider.
 type Resource struct {
-	Provider string `yaml:"provider"`
-	URL      string `yaml:"url"`
-	Token    string `yaml:"token"`             // resolved at runtime; raw placeholder stored in Config.rawTokens
-	SSHKey   string `yaml:"ssh_key,omitempty"` // optional SSH key path for clone authentication
-	Enabled  *bool  `yaml:"enabled,omitempty"` // nil or true = enabled, false = disabled
-	scheme   string // resolved from URL prefix: "https", "http", or "" (auto). not exported to YAML.
+	Provider       string `yaml:"provider"`
+	URL            string `yaml:"url"`
+	Token          string `yaml:"token"`                     // resolved at runtime; raw placeholder stored in Config.rawTokens
+	SSHKey         string `yaml:"ssh_key,omitempty"`         // optional SSH key path for clone authentication
+	OrganizationID string `yaml:"organization_id,omitempty"` // optional, required for Codeup provider
+	Enabled        *bool  `yaml:"enabled,omitempty"`         // nil or true = enabled, false = disabled
+	scheme         string // resolved from URL prefix: "https", "http", or "" (auto). not exported to YAML.
 }
 
 // IsEnabled returns true if the resource is enabled (default).
@@ -266,12 +267,15 @@ func (c *Config) validate() error {
 		if res.Provider == "" {
 			return fmt.Errorf("config: resource %q: 'provider' field is required", name)
 		}
-		validProviders := map[string]bool{"gitlab": true, "github": true, "generic": true}
+		validProviders := map[string]bool{"gitlab": true, "github": true, "generic": true, "codeup": true}
 		if !validProviders[res.Provider] {
-			return fmt.Errorf("config: resource %q: unsupported provider %q (use 'gitlab', 'github', or 'generic')", name, res.Provider)
+			return fmt.Errorf("config: resource %q: unsupported provider %q (use 'gitlab', 'github', 'codeup', or 'generic')", name, res.Provider)
 		}
 		if res.URL == "" {
 			return fmt.Errorf("config: resource %q: 'url' field is required", name)
+		}
+		if res.Provider == "codeup" && res.OrganizationID == "" {
+			return fmt.Errorf("config: resource %q: 'organization_id' field is required for codeup provider", name)
 		}
 		// 解析 URL，保留协议前缀信息
 		updated := res
