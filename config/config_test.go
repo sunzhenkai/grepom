@@ -1359,3 +1359,136 @@ repos:
 		t.Error("expected notes IsEnabled()=true (default)")
 	}
 }
+
+// --- YAML indent tests ---
+
+func TestWriteConfig_DefaultIndent(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Write back and verify default 2-space indent
+	if err := writeConfig(path, cfg); err != nil {
+		t.Fatalf("writeConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	rawContent := string(data)
+	// Default indent should be 2 spaces (e.g., "  provider:")
+	if !strings.Contains(rawContent, "  provider:") {
+		t.Errorf("expected 2-space indent for default, got:\n%s", rawContent)
+	}
+}
+
+func TestWriteConfig_CustomIndent(t *testing.T) {
+	content := `
+base: ~/projects
+yaml_indent: 4
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.YAMLIndent != 4 {
+		t.Fatalf("expected YAMLIndent=4, got %d", cfg.YAMLIndent)
+	}
+
+	// Write back and verify 4-space indent
+	if err := writeConfig(path, cfg); err != nil {
+		t.Fatalf("writeConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	rawContent := string(data)
+	// Should use 4-space indent (e.g., "    provider:")
+	if !strings.Contains(rawContent, "    provider:") {
+		t.Errorf("expected 4-space indent, got:\n%s", rawContent)
+	}
+
+	// yaml_indent field itself should NOT appear in the output file
+	if strings.Contains(rawContent, "yaml_indent") {
+		t.Errorf("yaml_indent field should not appear in output file, got:\n%s", rawContent)
+	}
+}
+
+func TestWriteConfig_YAMLIndentPreservedAfterWrite(t *testing.T) {
+	content := `
+base: ~/projects
+yaml_indent: 4
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: test
+    resource: gl
+    path: my-org
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Write back
+	if err := writeConfig(path, cfg); err != nil {
+		t.Fatalf("writeConfig failed: %v", err)
+	}
+
+	// YAMLIndent should be preserved on the in-memory config
+	if cfg.YAMLIndent != 4 {
+		t.Errorf("YAMLIndent should be preserved in memory after write, got %d", cfg.YAMLIndent)
+	}
+
+	// Load again — yaml_indent was stripped from file, so should default to 0
+	cfg2, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after write failed: %v", err)
+	}
+	if cfg2.YAMLIndent != 0 {
+		t.Errorf("yaml_indent stripped from file, expected 0 on reload, got %d", cfg2.YAMLIndent)
+	}
+}

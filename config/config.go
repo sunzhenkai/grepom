@@ -32,6 +32,7 @@ type Config struct {
 	Resources      map[string]Resource `yaml:"resources"`
 	Groups         []Group             `yaml:"groups"`
 	Repos          []Repo              `yaml:"repos"`
+	YAMLIndent     int                 `yaml:"yaml_indent,omitempty"`
 	rawTokens      map[string]string   // resource name → original token string (with ${...} placeholders)
 	rawGroupTokens map[int]string      // group index → original group token string
 	rawRepoTokens  map[int]string      // repo index → original repo token string
@@ -619,7 +620,18 @@ func writeConfig(path string, cfg *Config) error {
 		}
 	}
 
-	data, err := yaml.Marshal(cfg)
+	// 保存并清零 yaml_indent，使其不出现在输出文件中
+	indent := cfg.YAMLIndent
+	cfg.YAMLIndent = 0
+
+	// 确定 YAML 缩进，默认 2
+	if indent <= 0 {
+		indent = 2
+	}
+
+	data, err := marshalConfig(cfg, indent)
+	cfg.YAMLIndent = indent // 先恢复以便后续 restore 逻辑使用
+
 	if err != nil {
 		// Restore resolved tokens even on error
 		for name, t := range resolvedTokens {
@@ -661,4 +673,18 @@ func writeConfig(path string, cfg *Config) error {
 	cfg.Base = base
 
 	return os.WriteFile(path, data, 0644)
+}
+
+// marshalConfig 使用指定缩进将 Config 序列化为 YAML 字节。
+func marshalConfig(cfg *Config, indent int) ([]byte, error) {
+	var buf strings.Builder
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(indent)
+	if err := enc.Encode(cfg); err != nil {
+		return nil, err
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return []byte(buf.String()), nil
 }

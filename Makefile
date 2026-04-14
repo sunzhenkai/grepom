@@ -23,8 +23,8 @@ fmt:
 	gofmt -l -s .
 	@test -z "$$(gofmt -l -s .)"
 
-PREFIX ?= $(HOME)/.local
+INSTALL_PREFIX ?= $(HOME)/.local
 
 install: build
-	mkdir -p $(PREFIX)/bin
-	cp $(BINARY) $(PREFIX)/bin/
+	mkdir -p $(INSTALL_PREFIX)/bin
+	cp $(BINARY) $(INSTALL_PREFIX)/bin/

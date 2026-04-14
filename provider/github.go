@@ -39,13 +39,26 @@ func (g *GitHubProvider) getClient() *http.Client {
 	return g.client
 }
 
+// githubAPIURL ensures the server URL points to GitHub's REST API endpoint.
+// GitHub REST API uses api.github.com, not github.com directly.
+func githubAPIURL(serverURL string) string {
+	u := strings.TrimRight(serverURL, "/")
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	if u == "github.com" {
+		return "https://api.github.com"
+	}
+	return serverURL
+}
+
 func (g *GitHubProvider) ListRepos(ctx context.Context, params ListReposParams) ([]Repo, error) {
+	params.ServerURL = githubAPIURL(params.ServerURL)
 	var allRepos []Repo
 
-	for _, org := range params.Orgs {
-		repos, err := g.listOrgRepos(ctx, params, org)
+	for _, name := range params.Orgs {
+		repos, err := g.listReposFor(ctx, params, name)
 		if err != nil {
-			return nil, fmt.Errorf("github: org %s: %w", org, err)
+			return nil, fmt.Errorf("github: %s: %w", name, err)
 		}
 		allRepos = append(allRepos, repos...)
 	}
@@ -54,6 +67,7 @@ func (g *GitHubProvider) ListRepos(ctx context.Context, params ListReposParams) 
 }
 
 func (g *GitHubProvider) ListGroups(ctx context.Context, params ListGroupsParams) ([]RemoteGroup, error) {
+	params.ServerURL = githubAPIURL(params.ServerURL)
 	var allGroups []RemoteGroup
 	page := 1
 
@@ -81,6 +95,54 @@ func (g *GitHubProvider) ListGroups(ctx context.Context, params ListGroupsParams
 	}
 
 	return allGroups, nil
+}
+
+// isGitHubNotFound checks if the error is a GitHub 404 response.
+func isGitHubNotFound(err error) bool {
+	return strings.Contains(err.Error(), "github API error 404")
+}
+
+// listReposFor tries /users/ first, then falls back to /orgs/ on 404.
+func (g *GitHubProvider) listReposFor(ctx context.Context, params ListReposParams, name string) ([]Repo, error) {
+	repos, err := g.listUserRepos(ctx, params, name)
+	if err != nil {
+		if isGitHubNotFound(err) {
+			repos, err = g.listOrgRepos(ctx, params, name)
+		}
+	}
+	return repos, err
+}
+
+func (g *GitHubProvider) listUserRepos(ctx context.Context, params ListReposParams, username string) ([]Repo, error) {
+	var allRepos []Repo
+	page := 1
+
+	for {
+		apiURL := fmt.Sprintf("%s/users/%s/repos?per_page=100&page=%d&type=all", params.ServerURL, username, page)
+
+		var repos []githubRepo
+		nextPage, err := g.getWithPagination(ctx, params.Token, apiURL, &repos)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, r := range repos {
+			allRepos = append(allRepos, Repo{
+				Name:     r.Name,
+				CloneURL: r.CloneURL,
+				SSHURL:   r.SSHURL,
+				Path:     r.FullName,
+				Provider: "github",
+			})
+		}
+
+		if nextPage == 0 {
+			break
+		}
+		page = nextPage
+	}
+
+	return allRepos, nil
 }
 
 func (g *GitHubProvider) listOrgRepos(ctx context.Context, params ListReposParams, orgName string) ([]Repo, error) {
