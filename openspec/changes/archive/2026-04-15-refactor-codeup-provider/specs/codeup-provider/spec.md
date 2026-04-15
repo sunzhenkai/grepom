@@ -1,13 +1,4 @@
-### Requirement: Codeup provider 注册与初始化
-系统 SHALL 提供 `codeup` provider，在 `init()` 函数中通过 `provider.Register("codeup", ...)` 注册。Codeup provider SHALL 实现 `Provider` 接口的 `ListRepos` 和 `ListGroups` 方法。
-
-#### Scenario: codeup provider 注册
-- **WHEN** 程序启动时
-- **THEN** `codeup` provider 已注册到 provider 注册表，可通过 `provider.Get("codeup")` 获取实例
-
-#### Scenario: codeup provider 实现 Provider 接口
-- **WHEN** 通过 `provider.Get("codeup")` 获取 provider 实例
-- **THEN** 该实例实现了 `ListRepos(ctx, params)` 和 `ListGroups(ctx, params)` 方法
+## MODIFIED Requirements
 
 ### Requirement: Codeup API 基础地址映射
 Codeup provider SHALL 将用户配置的 `resource.url`（如 `codeup.aliyun.com`）映射为 OAPI v1 API 基础地址 `https://openapi-rdc.aliyuncs.com`，用于所有 API 调用。用户配置的 `resource.url` 仅用于 clone URL 推导。
@@ -116,3 +107,9 @@ Codeup provider 的 `ListGroups` 方法 SHALL 调用 `GET /oapi/v1/codeup/organi
 #### Scenario: ListNamespaces 调用失败
 - **WHEN** API 调用返回非 200 状态码
 - **THEN** provider 返回空列表，在 verbose 模式下输出警告
+
+## REMOVED Requirements
+
+### Requirement: Codeup 统一响应结构
+**Reason**: 新版 OAPI v1 不再使用 `{ requestId, success, errorCode, errorMessage, total, result }` wrapper，直接返回 JSON 数组，分页信息移至响应头。
+**Migration**: 响应解析逻辑完全重写，直接解码 JSON 数组 + 读取响应头分页字段。

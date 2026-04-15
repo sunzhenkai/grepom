@@ -10,55 +10,76 @@ import (
 	"testing"
 )
 
-// --- 6.1 codeupAPIURL tests ---
+// --- 4.1 codeupAPIBaseURL tests ---
 
-func TestCodeupAPIURL(t *testing.T) {
+func TestCodeupAPIBaseURL(t *testing.T) {
+	orgID := "test-org"
 	tests := []struct {
+		name     string
 		input    string
 		expected string
 	}{
-		{"codeup.aliyun.com", "https://devops.aliyun.com"},
-		{"https://codeup.aliyun.com", "https://devops.aliyun.com"},
-		{"http://codeup.aliyun.com", "https://devops.aliyun.com"},
-		{"https://codeup.aliyun.com/", "https://devops.aliyun.com"},
-		{"custom.example.com", "https://custom.example.com"},
-		{"https://custom.example.com", "https://custom.example.com"},
-		{"http://custom.example.com", "http://custom.example.com"},
+		{"codeup.aliyun.com maps to openapi-rdc", "codeup.aliyun.com", "https://openapi-rdc.aliyuncs.com/oapi/v1/codeup/organizations/test-org"},
+		{"https://codeup.aliyun.com", "https://codeup.aliyun.com", "https://openapi-rdc.aliyuncs.com/oapi/v1/codeup/organizations/test-org"},
+		{"http://codeup.aliyun.com", "http://codeup.aliyun.com", "https://openapi-rdc.aliyuncs.com/oapi/v1/codeup/organizations/test-org"},
+		{"custom host preserves http", "http://custom.example.com", "http://custom.example.com/oapi/v1/codeup/organizations/test-org"},
+		{"custom host with https", "https://custom.example.com", "https://custom.example.com/oapi/v1/codeup/organizations/test-org"},
+		{"plain host defaults to https", "custom.example.com", "https://custom.example.com/oapi/v1/codeup/organizations/test-org"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := codeupAPIURL(tt.input)
+		t.Run(tt.name, func(t *testing.T) {
+			result := codeupAPIBaseURL(tt.input, orgID)
 			if result != tt.expected {
-				t.Errorf("codeupAPIURL(%q) = %q, want %q", tt.input, result, tt.expected)
+				t.Errorf("codeupAPIBaseURL(%q, %q) = %q, want %q", tt.input, orgID, result, tt.expected)
 			}
 		})
 	}
 }
 
-// --- 6.2 ListRepos: full fetch + path prefix filtering ---
+// --- 4.2 ListRepos: two-step query with group path resolution ---
 
 func TestCodeupProvider_ListRepos_PathFilter(t *testing.T) {
-	allRepos := []codeupRepo{
+	orgID := "org123"
+	groupPath := "wii/solo"
+	groupID := 500
+
+	// Mock repos returned by ListGroupRepositories
+	groupRepos := []codeupRepo{
 		{Name: "grepom", Path: "grepom", PathWithNamespace: "wii/solo/grepom"},
-		{Name: "other", Path: "other", PathWithNamespace: "wii/other/project"},
-		{Name: "lib", Path: "lib", PathWithNamespace: "team/lib/repo"},
+		{Name: "lib", Path: "lib", PathWithNamespace: "wii/solo/lib"},
 	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// Verify organizationId is present
-		if r.URL.Query().Get("organizationId") != "org123" {
-			t.Errorf("missing or wrong organizationId: %s", r.URL.Query().Get("organizationId"))
+		// Verify x-yunxiao-token header
+		if r.Header.Get("x-yunxiao-token") != "test-token" {
+			t.Errorf("missing or wrong x-yunxiao-token header: %s", r.Header.Get("x-yunxiao-token"))
 		}
 
-		resp := codeupResponse{
-			Success: true,
-			Total:   int64(len(allRepos)),
-			Result:  mustMarshal(allRepos),
+		path := r.URL.Path
+
+		if strings.Contains(path, "/namespaces") {
+			// resolveGroupID: return namespace matching groupPath
+			namespaces := []codeupNamespace{
+				{ID: groupID, Path: "solo", PathWithNamespace: groupPath},
+				{ID: 501, Path: "other", PathWithNamespace: "wii/other"},
+			}
+			w.Header().Set("x-total", "2")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-per-page", "100")
+			json.NewEncoder(w).Encode(namespaces)
+		} else if strings.Contains(path, fmt.Sprintf("/groups/%d/repositories", groupID)) {
+			// ListGroupRepositories
+			w.Header().Set("x-total", "2")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-per-page", "100")
+			json.NewEncoder(w).Encode(groupRepos)
+		} else {
+			w.WriteHeader(404)
+			fmt.Fprintf(w, "unexpected path: %s", path)
 		}
-		json.NewEncoder(w).Encode(resp)
 	}))
 	defer ts.Close()
 
@@ -66,8 +87,8 @@ func TestCodeupProvider_ListRepos_PathFilter(t *testing.T) {
 	params := ListReposParams{
 		ServerURL:      ts.URL,
 		Token:          "test-token",
-		OrganizationID: "org123",
-		Groups:         []GroupQuery{{Path: "wii/solo"}},
+		OrganizationID: orgID,
+		Groups:         []GroupQuery{{Path: groupPath}},
 	}
 
 	repos, err := p.ListRepos(context.Background(), params)
@@ -75,8 +96,8 @@ func TestCodeupProvider_ListRepos_PathFilter(t *testing.T) {
 		t.Fatalf("ListRepos failed: %v", err)
 	}
 
-	if len(repos) != 1 {
-		t.Fatalf("expected 1 repo (filtered), got %d", len(repos))
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos, got %d", len(repos))
 	}
 	if repos[0].Name != "grepom" {
 		t.Errorf("expected repo name 'grepom', got %s", repos[0].Name)
@@ -85,51 +106,60 @@ func TestCodeupProvider_ListRepos_PathFilter(t *testing.T) {
 		t.Errorf("expected path 'wii/solo/grepom', got %s", repos[0].Path)
 	}
 
-	// Verify clone URLs
-	expectedHTTPS := "https://" + strings.TrimPrefix(strings.TrimPrefix(ts.URL, "https://"), "http://") + "/wii/solo/grepom.git"
+	// Verify clone URLs use original serverURL as host
+	cloneHost := strings.TrimPrefix(strings.TrimPrefix(ts.URL, "https://"), "http://")
+	expectedHTTPS := "https://" + cloneHost + "/wii/solo/grepom.git"
 	if repos[0].CloneURL != expectedHTTPS {
 		t.Errorf("expected clone URL %s, got %s", expectedHTTPS, repos[0].CloneURL)
 	}
-
-	expectedSSH := "git@" + strings.TrimPrefix(strings.TrimPrefix(ts.URL, "https://"), "http://") + ":wii/solo/grepom.git"
+	expectedSSH := "git@" + cloneHost + ":wii/solo/grepom.git"
 	if repos[0].SSHURL != expectedSSH {
 		t.Errorf("expected SSH URL %s, got %s", expectedSSH, repos[0].SSHURL)
 	}
 }
 
-// --- 6.3 ListRepos: multi-page pagination ---
+// --- 4.3 ListRepos: pagination via x-next-page ---
 
 func TestCodeupProvider_ListRepos_Pagination(t *testing.T) {
-	callCount := 0
+	groupID := 100
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		callCount++
-
-		perPage := r.URL.Query().Get("perPage")
 		page := r.URL.Query().Get("page")
 
-		// Simulate perPage=2 to force pagination
-		allRepos := []codeupRepo{
-			{Name: "repo-1", PathWithNamespace: "org/repo-1"},
-			{Name: "repo-2", PathWithNamespace: "org/repo-2"},
-			{Name: "repo-3", PathWithNamespace: "org/repo-3"},
+		if strings.Contains(r.URL.Path, "/namespaces") {
+			// resolveGroupID
+			namespaces := []codeupNamespace{
+				{ID: groupID, PathWithNamespace: "org"},
+			}
+			w.Header().Set("x-total", "1")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-per-page", "100")
+			json.NewEncoder(w).Encode(namespaces)
+			return
 		}
 
-		// Paginate based on page number, regardless of perPage param
-		var result []codeupRepo
-		_ = perPage
+		// ListGroupRepositories: return 3 repos across 2 pages
 		if page == "1" || page == "" {
-			result = allRepos[:2]
+			result := []codeupRepo{
+				{Name: "repo-1", PathWithNamespace: "org/repo-1"},
+				{Name: "repo-2", PathWithNamespace: "org/repo-2"},
+			}
+			w.Header().Set("x-total", "3")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-next-page", "2")
+			w.Header().Set("x-per-page", "2")
+			json.NewEncoder(w).Encode(result)
 		} else {
-			result = allRepos[2:]
+			result := []codeupRepo{
+				{Name: "repo-3", PathWithNamespace: "org/repo-3"},
+			}
+			w.Header().Set("x-total", "3")
+			w.Header().Set("x-page", "2")
+			w.Header().Set("x-per-page", "2")
+			// No x-next-page → last page
+			json.NewEncoder(w).Encode(result)
 		}
-
-		resp := codeupResponse{
-			Success: true,
-			Total:   3,
-			Result:  mustMarshal(result),
-		}
-		json.NewEncoder(w).Encode(resp)
 	}))
 	defer ts.Close()
 
@@ -146,47 +176,57 @@ func TestCodeupProvider_ListRepos_Pagination(t *testing.T) {
 		t.Fatalf("ListRepos failed: %v", err)
 	}
 
-	// With perPage=100 and total=3, it's only 1 page.
-	// The test server always returns 2 items on page 1, so we get 2 repos.
-	// This validates the pagination loop correctly stops after 1 page (ceil(3/100) = 1).
-	if len(repos) != 2 {
-		t.Fatalf("expected 2 repos (from page 1 with perPage=100), got %d", len(repos))
-	}
-
-	if callCount != 1 {
-		t.Errorf("expected 1 API call (all fits in one page), got %d", callCount)
+	if len(repos) != 3 {
+		t.Fatalf("expected 3 repos across 2 pages, got %d", len(repos))
 	}
 }
 
 func TestCodeupProvider_ListRepos_MultiPage(t *testing.T) {
+	groupID := 200
 	callCount := 0
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		if strings.Contains(r.URL.Path, "/namespaces") {
+			namespaces := []codeupNamespace{
+				{ID: groupID, PathWithNamespace: "org"},
+			}
+			w.Header().Set("x-total", "1")
+			json.NewEncoder(w).Encode(namespaces)
+			return
+		}
+
 		callCount++
 		page := r.URL.Query().Get("page")
 
 		var result []codeupRepo
-		// Simulate total=250, perPage=100 → 3 pages
 		if page == "1" || page == "" {
 			for i := 0; i < 100; i++ {
 				result = append(result, codeupRepo{Name: fmt.Sprintf("repo-%d", i), PathWithNamespace: fmt.Sprintf("org/repo-%d", i)})
 			}
+			w.Header().Set("x-total", "250")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-next-page", "2")
+			w.Header().Set("x-per-page", "100")
 		} else if page == "2" {
 			for i := 100; i < 200; i++ {
 				result = append(result, codeupRepo{Name: fmt.Sprintf("repo-%d", i), PathWithNamespace: fmt.Sprintf("org/repo-%d", i)})
 			}
+			w.Header().Set("x-total", "250")
+			w.Header().Set("x-page", "2")
+			w.Header().Set("x-next-page", "3")
+			w.Header().Set("x-per-page", "100")
 		} else {
 			for i := 200; i < 250; i++ {
 				result = append(result, codeupRepo{Name: fmt.Sprintf("repo-%d", i), PathWithNamespace: fmt.Sprintf("org/repo-%d", i)})
 			}
+			w.Header().Set("x-total", "250")
+			w.Header().Set("x-page", "3")
+			w.Header().Set("x-per-page", "100")
+			// No x-next-page → last page
 		}
-
-		resp := codeupResponse{
-			Success: true,
-			Total:   250,
-			Result:  mustMarshal(result),
-		}
-		json.NewEncoder(w).Encode(resp)
+		json.NewEncoder(w).Encode(result)
 	}))
 	defer ts.Close()
 
@@ -208,11 +248,11 @@ func TestCodeupProvider_ListRepos_MultiPage(t *testing.T) {
 	}
 
 	if callCount != 3 {
-		t.Errorf("expected 3 API calls, got %d", callCount)
+		t.Errorf("expected 3 ListGroupRepositories API calls, got %d", callCount)
 	}
 }
 
-// --- 6.4 ListRepos: auth failure and API error ---
+// --- 4.4 ListRepos: auth failure and API error ---
 
 func TestCodeupProvider_ListRepos_AuthFailure(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -240,14 +280,8 @@ func TestCodeupProvider_ListRepos_AuthFailure(t *testing.T) {
 
 func TestCodeupProvider_ListRepos_APIError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
-		resp := codeupResponse{
-			Success:      false,
-			ErrorCode:    "SYSTEM_UNKNOWN_ERROR",
-			ErrorMessage: "internal error",
-		}
-		json.NewEncoder(w).Encode(resp)
+		w.WriteHeader(500)
+		w.Write([]byte(`{"error":"internal server error"}`))
 	}))
 	defer ts.Close()
 
@@ -263,54 +297,39 @@ func TestCodeupProvider_ListRepos_APIError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected API error")
 	}
-	if !strings.Contains(err.Error(), "SYSTEM_UNKNOWN_ERROR") {
-		t.Errorf("expected error code in message, got: %v", err)
+	if !strings.Contains(err.Error(), "codeup API error 500") {
+		t.Errorf("expected error with status code, got: %v", err)
 	}
 }
 
-// --- 6.5 ListGroups test ---
+// --- 4.5 ListGroups: using ListNamespaces ---
 
 func TestCodeupProvider_ListGroups(t *testing.T) {
 	orgID := "60de7a6852743a5162b5f957"
-	rootNamespaceID := int64(26842)
 
-	// Mock group detail for identityGetGroupByPath
-	groupDetail := codeupGroupDetail{
-		ID:                rootNamespaceID,
-		Path:              orgID,
-		Name:              orgID,
-		PathWithNamespace: orgID,
-	}
-
-	// Mock top-level groups
-	topGroups := []codeupGroup{
-		{ID: 100, Path: "frontend", Name: "frontend", PathWithNamespace: "org/frontend"},
-		{ID: 101, Path: "backend", Name: "backend", PathWithNamespace: "org/backend"},
+	namespaces := []codeupNamespace{
+		{ID: 100, Path: "frontend", PathWithNamespace: "org/frontend", Name: "Frontend"},
+		{ID: 101, Path: "backend", PathWithNamespace: "org/backend", Name: "Backend"},
 	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		path := r.URL.Path
 
-		if strings.Contains(path, "/api/4/groups/find_by_path") {
-			// identityGetGroupByPath
-			resp := codeupResponse{
-				Success: true,
-				Result:  mustMarshal(groupDetail),
-			}
-			json.NewEncoder(w).Encode(resp)
-		} else if strings.Contains(path, "/repository/groups/get/all") {
-			// ListRepositoryGroups
-			resp := codeupResponse{
-				Success: true,
-				Total:   2,
-				Result:  mustMarshal(topGroups),
-			}
-			json.NewEncoder(w).Encode(resp)
-		} else {
-			w.WriteHeader(404)
-			fmt.Fprintf(w, "unexpected path: %s", path)
+		// Verify auth header
+		if r.Header.Get("x-yunxiao-token") != "test-token" {
+			t.Errorf("missing x-yunxiao-token header")
 		}
+
+		if !strings.Contains(r.URL.Path, "/namespaces") {
+			w.WriteHeader(404)
+			fmt.Fprintf(w, "unexpected path: %s", r.URL.Path)
+			return
+		}
+
+		w.Header().Set("x-total", "2")
+		w.Header().Set("x-page", "1")
+		w.Header().Set("x-per-page", "100")
+		json.NewEncoder(w).Encode(namespaces)
 	}))
 	defer ts.Close()
 
@@ -344,16 +363,10 @@ func TestCodeupProvider_ListGroups(t *testing.T) {
 	}
 }
 
-func TestCodeupProvider_ListGroups_RootLookupFailure(t *testing.T) {
+func TestCodeupProvider_ListGroups_APINamespacesFailure(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		// Return error for find_by_path
-		resp := codeupResponse{
-			Success:      false,
-			ErrorCode:    "NotFound",
-			ErrorMessage: "group not found",
-		}
-		json.NewEncoder(w).Encode(resp)
+		w.WriteHeader(500)
+		w.Write([]byte(`{"error":"internal server error"}`))
 	}))
 	defer ts.Close()
 
@@ -369,7 +382,174 @@ func TestCodeupProvider_ListGroups_RootLookupFailure(t *testing.T) {
 		t.Fatalf("expected graceful degradation (nil error), got: %v", err)
 	}
 	if groups != nil {
-		t.Errorf("expected nil groups on root lookup failure, got %d groups", len(groups))
+		t.Errorf("expected nil groups on API failure, got %d groups", len(groups))
+	}
+}
+
+// --- 4.6 ListRepos: fallback to full list when namespace not found ---
+
+func TestCodeupProvider_ListRepos_FallbackToFullList(t *testing.T) {
+	orgID := "org123"
+	groupPath := "nonexistent"
+
+	// All repos in org (returned by fallback ListRepositories)
+	allRepos := []codeupRepo{
+		{Name: "repo-a", PathWithNamespace: "wii/solo/repo-a"},
+		{Name: "repo-b", PathWithNamespace: "other/team/repo-b"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/namespaces") {
+			// Return namespaces that don't match the group path → triggers fallback
+			namespaces := []codeupNamespace{
+				{ID: 999, PathWithNamespace: "other/path"},
+			}
+			w.Header().Set("x-total", "1")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-per-page", "100")
+			json.NewEncoder(w).Encode(namespaces)
+		} else if strings.Contains(path, "/repositories") && !strings.Contains(path, "/groups/") {
+			// Fallback: ListRepositories (full list)
+			w.Header().Set("x-total", "2")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-per-page", "100")
+			json.NewEncoder(w).Encode(allRepos)
+		} else {
+			w.WriteHeader(404)
+			fmt.Fprintf(w, "unexpected path: %s", path)
+		}
+	}))
+	defer ts.Close()
+
+	p := &CodeupProvider{}
+	params := ListReposParams{
+		ServerURL:      ts.URL,
+		Token:          "test-token",
+		OrganizationID: orgID,
+		Groups:         []GroupQuery{{Path: groupPath}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	// No repos match "nonexistent/" prefix, so result should be empty
+	if len(repos) != 0 {
+		t.Fatalf("expected 0 repos (no prefix match), got %d", len(repos))
+	}
+}
+
+// --- 4.7 ListRepos: includeSubgroups for recursive ---
+
+func TestCodeupProvider_ListRepos_Recursive(t *testing.T) {
+	orgID := "org123"
+	groupPath := "wii"
+	groupID := 300
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/namespaces") {
+			namespaces := []codeupNamespace{
+				{ID: groupID, PathWithNamespace: groupPath},
+			}
+			w.Header().Set("x-total", "1")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-per-page", "100")
+			json.NewEncoder(w).Encode(namespaces)
+		} else if strings.Contains(path, fmt.Sprintf("/groups/%d/repositories", groupID)) {
+			// Verify includeSubgroups parameter
+			includeSubgroups := r.URL.Query().Get("includeSubgroups")
+			if includeSubgroups != "true" {
+				t.Errorf("expected includeSubgroups=true for recursive, got %s", includeSubgroups)
+			}
+
+			repos := []codeupRepo{
+				{Name: "main", PathWithNamespace: "wii/main"},
+				{Name: "sub-repo", PathWithNamespace: "wii/sub/deep"},
+			}
+			w.Header().Set("x-total", "2")
+			w.Header().Set("x-page", "1")
+			w.Header().Set("x-per-page", "100")
+			json.NewEncoder(w).Encode(repos)
+		} else {
+			w.WriteHeader(404)
+			fmt.Fprintf(w, "unexpected path: %s", path)
+		}
+	}))
+	defer ts.Close()
+
+	p := &CodeupProvider{}
+	params := ListReposParams{
+		ServerURL:      ts.URL,
+		Token:          "test-token",
+		OrganizationID: orgID,
+		Groups:         []GroupQuery{{Path: groupPath, Recursive: true}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos (recursive), got %d", len(repos))
+	}
+}
+
+func TestCodeupProvider_ListRepos_NonRecursive(t *testing.T) {
+	orgID := "org123"
+	groupPath := "wii"
+	groupID := 300
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/namespaces") {
+			namespaces := []codeupNamespace{
+				{ID: groupID, PathWithNamespace: groupPath},
+			}
+			w.Header().Set("x-total", "1")
+			json.NewEncoder(w).Encode(namespaces)
+		} else if strings.Contains(path, fmt.Sprintf("/groups/%d/repositories", groupID)) {
+			// Verify includeSubgroups parameter is false
+			includeSubgroups := r.URL.Query().Get("includeSubgroups")
+			if includeSubgroups != "false" {
+				t.Errorf("expected includeSubgroups=false for non-recursive, got %s", includeSubgroups)
+			}
+
+			repos := []codeupRepo{
+				{Name: "main", PathWithNamespace: "wii/main"},
+			}
+			w.Header().Set("x-total", "1")
+			json.NewEncoder(w).Encode(repos)
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	p := &CodeupProvider{}
+	params := ListReposParams{
+		ServerURL:      ts.URL,
+		Token:          "test-token",
+		OrganizationID: orgID,
+		Groups:         []GroupQuery{{Path: groupPath, Recursive: false}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (non-recursive), got %d", len(repos))
 	}
 }
 
