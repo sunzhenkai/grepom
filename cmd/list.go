@@ -267,7 +267,7 @@ func runListRemoteRepos(cfg *config.Config) error {
 		}
 
 		for _, r := range repos {
-			excluded := repo.IsExcluded(g.ExcludeRepos, r.Name)
+			excluded := repo.IsExcluded(g.ExcludeRepos, r.Name, r.Path)
 			// 非 --all 模式下跳过被排除的仓库
 			if !listAll && excluded {
 				continue

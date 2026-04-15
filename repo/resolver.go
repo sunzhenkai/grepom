@@ -77,7 +77,7 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 					pRepo.DisabledReason = "disabled"
 				} else if !g.IsEnabled() {
 					pRepo.DisabledReason = "disabled"
-				} else if IsExcluded(g.ExcludeRepos, gr.Name) {
+				} else if IsExcluded(g.ExcludeRepos, gr.Name, gr.Path) {
 					pRepo.DisabledReason = "excluded"
 				}
 
@@ -99,7 +99,7 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 				// Check group disabled
 				if !g.IsEnabled() {
 					pRepo.DisabledReason = "disabled"
-				} else if IsExcluded(g.ExcludeRepos, gr.Name) {
+				} else if IsExcluded(g.ExcludeRepos, gr.Name, gr.Path) {
 					pRepo.DisabledReason = "excluded"
 				}
 
@@ -157,10 +157,10 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 		} else {
 			// No resource: use repo's url directly
 			pRepo := provider.Repo{
-				Name:      repo.Name,
-				CloneURL:  repo.URL,
-				SSHURL:    repo.URL,
-				Path:      localPath,
+				Name:     repo.Name,
+				CloneURL: repo.URL,
+				SSHURL:   repo.URL,
+				Path:     localPath,
 			}
 
 			if !repo.IsEnabled() {
@@ -174,14 +174,27 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 	return allRepos
 }
 
-// IsExcluded checks if a repo name is in the exclude list.
-func IsExcluded(excludeRepos []string, repoName string) bool {
-	for _, name := range excludeRepos {
-		if name == repoName {
-			return true
+// IsExcluded checks if a repo should be excluded based on the exclude list.
+// Patterns without wildcards are matched against repoName (exact match, backward compatible).
+// Patterns with wildcards (*, ?, [) are matched against remotePath using filepath.Match glob.
+func IsExcluded(excludeRepos []string, repoName string, remotePath string) bool {
+	for _, pattern := range excludeRepos {
+		if hasWildcard(pattern) {
+			if matched, _ := filepath.Match(pattern, remotePath); matched {
+				return true
+			}
+		} else {
+			if pattern == repoName {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// hasWildcard returns true if the pattern contains glob wildcard characters.
+func hasWildcard(pattern string) bool {
+	return strings.ContainsAny(pattern, "*?[")
 }
 
 // Resolve builds the full repo list, excluding disabled and excluded repos.

@@ -986,21 +986,38 @@ func TestIsExcluded(t *testing.T) {
 		name         string
 		excludeRepos []string
 		repoName     string
+		remotePath   string
 		want         bool
 	}{
-		{"empty list", nil, "app", false},
-		{"empty list match", []string{}, "app", false},
-		{"single match", []string{"app"}, "app", true},
-		{"single no match", []string{"other"}, "app", false},
-		{"multiple match first", []string{"app", "other"}, "app", true},
-		{"multiple match last", []string{"other", "app"}, "app", true},
-		{"multiple no match", []string{"other", "third"}, "app", false},
-		{"case sensitive", []string{"App"}, "app", false},
-		{"partial name no match", []string{"app-old"}, "app", false},
+		// 精确匹配（向后兼容）
+		{"empty list", nil, "app", "org/app", false},
+		{"empty list match", []string{}, "app", "org/app", false},
+		{"single match", []string{"app"}, "app", "org/app", true},
+		{"single no match", []string{"other"}, "app", "org/app", false},
+		{"multiple match first", []string{"app", "other"}, "app", "org/app", true},
+		{"multiple match last", []string{"other", "app"}, "app", "org/app", true},
+		{"multiple no match", []string{"other", "third"}, "app", "org/app", false},
+		{"case sensitive", []string{"App"}, "app", "org/app", false},
+		{"partial name no match", []string{"app-old"}, "app", "org/app", false},
+
+		// Glob 匹配远端路径
+		{"glob prefix match", []string{"org/frontend/*"}, "web-app", "org/frontend/web-app", true},
+		{"glob prefix no match", []string{"org/backend/*"}, "web-app", "org/frontend/web-app", false},
+		{"glob multi-level match", []string{"*/*/*"}, "legacy-api", "org/backend/legacy-api", true},
+		{"glob multi-level no match", []string{"*/*/*"}, "api", "org/api", false},
+		{"glob mid-level match", []string{"org/*/service-*"}, "auth", "org/backend/service-auth", true},
+		{"glob mid-level no match", []string{"org/*/service-*"}, "auth", "org/backend/auth", false},
+		{"glob exact name match", []string{"org/deprecated-*"}, "deprecated-app", "org/deprecated-app", true},
+		{"glob exact name no match", []string{"org/deprecated-*"}, "app", "org/app", false},
+
+		// 混合模式：精确 + glob
+		{"mixed exact and glob", []string{"deprecated-app", "org/frontend/*"}, "web-app", "org/frontend/web-app", true},
+		{"mixed exact match", []string{"deprecated-app", "org/frontend/*"}, "deprecated-app", "org/backend/deprecated-app", true},
+		{"mixed neither match", []string{"deprecated-app", "org/frontend/*"}, "api", "org/backend/api", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsExcluded(tt.excludeRepos, tt.repoName); got != tt.want {
+			if got := IsExcluded(tt.excludeRepos, tt.repoName, tt.remotePath); got != tt.want {
 				t.Errorf("IsExcluded() = %v, want %v", got, tt.want)
 			}
 		})

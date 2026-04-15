@@ -128,7 +128,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 			var newGroupRepos []config.GroupRepo
 			var excludedCount int
 			for _, r := range repos {
-				if repo.IsExcluded(g.ExcludeRepos, r.Name) {
+				if repo.IsExcluded(g.ExcludeRepos, r.Name, r.Path) {
 					excludedCount++
 					continue
 				}
