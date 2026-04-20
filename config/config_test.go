@@ -1514,6 +1514,262 @@ groups:
 	}
 }
 
+// --- DedupGroupRepos tests ---
+
+func TestDedupGroupRepos_Basic(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: core-team
+    resource: gl
+    path: my-org/core
+    local_path: ./core
+    repos:
+      - name: api-lib
+        url: https://gitlab.com/my-org/core/api-lib.git
+        path: my-org/core/api-lib
+      - name: shared-utils
+        url: https://gitlab.com/my-org/core/shared-utils.git
+        path: my-org/core/shared-utils
+      - name: core-only
+        url: https://gitlab.com/my-org/core/core-only.git
+        path: my-org/core/core-only
+  - name: infra-team
+    resource: gl
+    path: my-org/infra
+    local_path: ./infra
+    repos:
+      - name: api-lib
+        url: https://gitlab.com/my-org/infra/api-lib.git
+        path: my-org/infra/api-lib
+      - name: deploy-tool
+        url: https://gitlab.com/my-org/infra/deploy-tool.git
+        path: my-org/infra/deploy-tool
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	excluded, err := DedupGroupRepos(path, "core-team", []string{"api-lib"})
+	if err != nil {
+		t.Fatalf("DedupGroupRepos failed: %v", err)
+	}
+	if len(excluded) != 1 || excluded[0] != "api-lib" {
+		t.Errorf("expected excluded [api-lib], got %v", excluded)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after DedupGroupRepos failed: %v", err)
+	}
+
+	coreGroup := cfg.Groups[0]
+	if len(coreGroup.Repos) != 2 {
+		t.Fatalf("expected 2 repos in core-team, got %d", len(coreGroup.Repos))
+	}
+	for _, r := range coreGroup.Repos {
+		if r.Name == "api-lib" {
+			t.Error("api-lib should have been removed from repos")
+		}
+	}
+
+	if len(coreGroup.ExcludeRepos) != 1 || coreGroup.ExcludeRepos[0] != "api-lib" {
+		t.Errorf("expected exclude_repos [api-lib], got %v", coreGroup.ExcludeRepos)
+	}
+
+	infraGroup := cfg.Groups[1]
+	if len(infraGroup.Repos) != 2 {
+		t.Errorf("expected 2 repos in infra-team (unchanged), got %d", len(infraGroup.Repos))
+	}
+	if len(infraGroup.ExcludeRepos) != 0 {
+		t.Errorf("expected no exclude_repos for infra-team, got %v", infraGroup.ExcludeRepos)
+	}
+}
+
+func TestDedupGroupRepos_NoDuplicates(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: core-team
+    resource: gl
+    path: my-org/core
+    local_path: ./core
+    exclude_repos:
+      - api-lib
+    repos:
+      - name: api-lib
+        url: https://gitlab.com/my-org/core/api-lib.git
+        path: my-org/core/api-lib
+      - name: other
+        url: https://gitlab.com/my-org/core/other.git
+        path: my-org/core/other
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	excluded, err := DedupGroupRepos(path, "core-team", []string{"api-lib"})
+	if err != nil {
+		t.Fatalf("DedupGroupRepos failed: %v", err)
+	}
+	if len(excluded) != 1 || excluded[0] != "api-lib" {
+		t.Errorf("expected excluded [api-lib], got %v", excluded)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	coreGroup := cfg.Groups[0]
+	if len(coreGroup.ExcludeRepos) != 1 || coreGroup.ExcludeRepos[0] != "api-lib" {
+		t.Errorf("expected single exclude_repos entry [api-lib], got %v", coreGroup.ExcludeRepos)
+	}
+	if len(coreGroup.Repos) != 1 {
+		t.Errorf("expected 1 repo (api-lib removed), got %d", len(coreGroup.Repos))
+	}
+}
+
+func TestDedupGroupRepos_GlobCovered(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: core-team
+    resource: gl
+    path: my-org/core
+    local_path: ./core
+    exclude_repos:
+      - "test-*"
+    repos:
+      - name: test-integration
+        url: https://gitlab.com/my-org/core/test-integration.git
+        path: my-org/core/test-integration
+      - name: other
+        url: https://gitlab.com/my-org/core/other.git
+        path: my-org/core/other
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	excluded, err := DedupGroupRepos(path, "core-team", []string{"test-integration"})
+	if err != nil {
+		t.Fatalf("DedupGroupRepos failed: %v", err)
+	}
+	if len(excluded) != 1 {
+		t.Errorf("expected 1 excluded, got %v", excluded)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	coreGroup := cfg.Groups[0]
+	if len(coreGroup.ExcludeRepos) != 1 || coreGroup.ExcludeRepos[0] != "test-*" {
+		t.Errorf("expected exclude_repos unchanged [test-*], got %v", coreGroup.ExcludeRepos)
+	}
+	if len(coreGroup.Repos) != 1 || coreGroup.Repos[0].Name != "other" {
+		t.Errorf("expected only 'other' repo remaining, got %v", coreGroup.Repos)
+	}
+}
+
+func TestDedupGroupRepos_NoMatches(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: core-team
+    resource: gl
+    path: my-org/core
+    local_path: ./core
+    repos:
+      - name: api-lib
+        url: https://gitlab.com/my-org/core/api-lib.git
+        path: my-org/core/api-lib
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	excluded, err := DedupGroupRepos(path, "core-team", []string{"nonexistent"})
+	if err != nil {
+		t.Fatalf("DedupGroupRepos failed: %v", err)
+	}
+	if len(excluded) != 0 {
+		t.Errorf("expected 0 excluded, got %v", excluded)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.Groups[0].Repos) != 1 {
+		t.Error("repos should be unchanged")
+	}
+}
+
+func TestDedupGroupRepos_GroupNotFound(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups: []
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := DedupGroupRepos(path, "nonexistent", []string{"repo1"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent group")
+	}
+}
+
+func TestIsExcludedName(t *testing.T) {
+	tests := []struct {
+		name     string
+		patterns []string
+		repoName string
+		want     bool
+	}{
+		{"exact match", []string{"app"}, "app", true},
+		{"no match", []string{"other"}, "app", false},
+		{"glob match", []string{"api-*"}, "api-lib", true},
+		{"glob no match", []string{"api-*"}, "web-app", false},
+		{"empty patterns", nil, "app", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isExcludedName(tt.patterns, tt.repoName); got != tt.want {
+				t.Errorf("isExcludedName() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteConfig_YAMLIndentPreservedAfterWrite(t *testing.T) {
 	content := `
 base: ~/projects

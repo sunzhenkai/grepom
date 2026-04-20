@@ -540,6 +540,75 @@ func SyncGroupRepos(configPath, groupName string, newRepos []GroupRepo) (int, er
 	return added, err
 }
 
+// DedupGroupRepos removes repos with matching names from the target group's repos list
+// and appends them to exclude_repos (if not already covered by existing patterns).
+// Returns the names of repos that were excluded, and any error.
+func DedupGroupRepos(configPath, targetGroupName string, repoNames []string) ([]string, error) {
+	var excluded []string
+	err := WithFileLock(configPath, 30*time.Second, func() error {
+		cfg, err := Load(configPath)
+		if err != nil {
+			return err
+		}
+
+		idx, group, err := cfg.FindGroup(targetGroupName)
+		if err != nil {
+			return err
+		}
+
+		nameSet := make(map[string]bool)
+		for _, n := range repoNames {
+			nameSet[n] = true
+		}
+
+		// 过滤 repos 列表：移除匹配的条目
+		var kept []GroupRepo
+		for _, r := range group.Repos {
+			if nameSet[r.Name] {
+				excluded = append(excluded, r.Name)
+			} else {
+				kept = append(kept, r)
+			}
+		}
+		cfg.Groups[idx].Repos = kept
+
+		// 追加到 exclude_repos（去重，不重复已覆盖的）
+		for _, name := range excluded {
+			if !isExcludedName(group.ExcludeRepos, name) {
+				cfg.Groups[idx].ExcludeRepos = append(cfg.Groups[idx].ExcludeRepos, name)
+			}
+		}
+
+		if len(excluded) == 0 {
+			return nil
+		}
+
+		return writeConfig(configPath, cfg)
+	})
+	return excluded, err
+}
+
+// isExcludedName checks if a repo name is already covered by existing exclude patterns.
+func isExcludedName(patterns []string, name string) bool {
+	for _, p := range patterns {
+		if p == name {
+			return true
+		}
+		// glob 匹配
+		if hasWildcard(p) {
+			if matched, _ := filepath.Match(p, name); matched {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasWildcard returns true if the pattern contains glob wildcard characters.
+func hasWildcard(pattern string) bool {
+	return strings.ContainsAny(pattern, "*?[")
+}
+
 func ensureConfigFile(path string) (*Config, error) {
 	if _, err := os.Stat(path); err != nil {
 		cfg := &Config{
