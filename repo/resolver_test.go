@@ -229,28 +229,28 @@ func TestDeriveSSHURL_WithPort(t *testing.T) {
 }
 
 func TestExtractRepoPath_HTTPS(t *testing.T) {
-	result := extractRepoPath("https://gitlab.com/me/dotfiles.git")
+	result := ExtractRemotePath("https://gitlab.com/me/dotfiles.git")
 	if result != "me/dotfiles" {
 		t.Errorf("expected me/dotfiles, got %s", result)
 	}
 }
 
 func TestExtractRepoPath_SSH(t *testing.T) {
-	result := extractRepoPath("git@gitlab.com:me/dotfiles.git")
+	result := ExtractRemotePath("git@gitlab.com:me/dotfiles.git")
 	if result != "me/dotfiles" {
 		t.Errorf("expected me/dotfiles, got %s", result)
 	}
 }
 
 func TestExtractRepoPath_PlainPath(t *testing.T) {
-	result := extractRepoPath("me/dotfiles.git")
+	result := ExtractRemotePath("me/dotfiles.git")
 	if result != "me/dotfiles" {
 		t.Errorf("expected me/dotfiles, got %s", result)
 	}
 }
 
 func TestExtractRepoPath_HTTPSWithPort(t *testing.T) {
-	result := extractRepoPath("https://gitlab.com:8443/me/dotfiles.git")
+	result := ExtractRemotePath("https://gitlab.com:8443/me/dotfiles.git")
 	if result != "me/dotfiles" {
 		t.Errorf("expected me/dotfiles, got %s", result)
 	}

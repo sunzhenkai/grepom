@@ -131,7 +131,7 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 				sshKey = res.SSHKey
 			}
 
-			repoPath := extractRepoPath(repo.URL)
+			repoPath := ExtractRemotePath(repo.URL)
 
 			pRepo := provider.Repo{
 				Name:           repo.Name,
@@ -284,11 +284,11 @@ func deriveSSHURL(repoPath, host string) string {
 	return "git@" + host + ":" + repoPath + ".git"
 }
 
-// extractRepoPath 从克隆 URL 中提取 repo 路径部分。
+// ExtractRemotePath 从克隆 URL 中提取 repo 远程路径部分。
 // 例如 "https://gitlab.com/me/dotfiles.git" → "me/dotfiles"
 // "git@gitlab.com:me/dotfiles.git" → "me/dotfiles"
 // "me/dotfiles.git" → "me/dotfiles"
-func extractRepoPath(cloneURL string) string {
+func ExtractRemotePath(cloneURL string) string {
 	// 去掉 .git 后缀
 	path := strings.TrimSuffix(cloneURL, ".git")
 
