@@ -250,6 +250,20 @@ func Pull(path string) error {
 	return nil
 }
 
+// Push runs git push in the given directory with optional extra arguments.
+// The extra arguments are passed directly to git push (e.g. "--", "origin", "main").
+func Push(path string, args ...string) error {
+	pushArgs := append([]string{"-C", path, "push"}, args...)
+	cmd := exec.Command("git", pushArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git push: %w", err)
+	}
+	return nil
+}
+
 // GetDefaultBranch returns the short name of the default branch (the one origin/HEAD points to).
 // Returns an error if the repo doesn't exist or origin/HEAD is not set.
 func GetDefaultBranch(path string) (string, error) {

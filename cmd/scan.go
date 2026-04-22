@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
+	"github.com/wii/grepom/config"
 	"github.com/wii/grepom/git"
 	"github.com/wii/grepom/repo"
 	"github.com/wii/grepom/scanner"
@@ -55,6 +56,10 @@ func init() {
 func runScan(cmd *cobra.Command, args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
+		// 配置文件不存在时回退到扫描当前目录
+		if config.IsConfigNotFound(err) {
+			return runScanCurrentDir()
+		}
 		return err
 	}
 
@@ -150,7 +155,34 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 	wg.Wait()
 
-	// 输出结果
+	return outputFindings(findings)
+}
+
+// runScanCurrentDir 在无配置文件时扫描当前工作目录。
+func runScanCurrentDir() error {
+	fmt.Fprintln(os.Stderr, "  Scanning current directory (no config file found)...")
+
+	s := scanner.NewScanner(scanner.Options{
+		GitleaksConfigPath: scanGitleaksCfg,
+	})
+
+	ctx := context.Background()
+	findings, err := s.ScanDir(ctx, ".")
+	if err != nil {
+		return fmt.Errorf("扫描当前目录失败: %w", err)
+	}
+
+	// 设置 repo 名称为当前目录
+	dir, _ := os.Getwd()
+	for i := range findings {
+		findings[i].Repo = dir
+	}
+
+	return outputFindings(findings)
+}
+
+// outputFindings 根据格式标志将扫描结果输出到指定目标。
+func outputFindings(findings []scanner.Finding) error {
 	var w io.Writer = os.Stdout
 	if scanOutput != "" {
 		f, err := os.Create(scanOutput)

@@ -711,3 +711,39 @@ func TestPullAll_InvalidConcurrency(t *testing.T) {
 		t.Error("expected nil for empty tasks with 0 concurrency")
 	}
 }
+
+// --- Push tests ---
+
+func TestPush_NotAGitDir(t *testing.T) {
+	dir := t.TempDir()
+	err := Push(dir)
+	if err == nil {
+		t.Error("expected error when pushing from non-git directory")
+	}
+}
+
+func TestPush_WithArgs(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+
+	// Push to a non-existent remote should fail, but the command should be constructed correctly
+	err := Push(dir, "--dry-run")
+	if err == nil {
+		// If it succeeds (unlikely without a remote), that's fine too
+		t.Log("push --dry-run succeeded (no remote)")
+	}
+	// The key test is that the function doesn't panic with args
+}

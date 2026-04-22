@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -469,6 +470,43 @@ func TestFindConfig_NotFound(t *testing.T) {
 	_, err := FindConfig("")
 	if err == nil {
 		t.Fatal("expected error when no config found")
+	}
+}
+
+func TestFindConfig_NotFound_ReturnsErrConfigNotFound(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(oldDir)
+
+	_, err := FindConfig("")
+	if err == nil {
+		t.Fatal("expected error when no config found")
+	}
+	if !IsConfigNotFound(err) {
+		t.Errorf("expected IsConfigNotFound to be true, got error: %v", err)
+	}
+}
+
+func TestIsConfigNotFound_Nil(t *testing.T) {
+	if IsConfigNotFound(nil) {
+		t.Error("expected IsConfigNotFound(nil) to be false")
+	}
+}
+
+func TestIsConfigNotFound_OtherError(t *testing.T) {
+	if IsConfigNotFound(fmt.Errorf("some other error")) {
+		t.Error("expected IsConfigNotFound to be false for non-config error")
+	}
+}
+
+func TestFindConfig_ExplicitPathNotFound_ReturnsErrConfigNotFound(t *testing.T) {
+	_, err := FindConfig("/nonexistent/path/config.yml")
+	if err == nil {
+		t.Fatal("expected error for nonexistent explicit path")
+	}
+	if !IsConfigNotFound(err) {
+		t.Errorf("expected IsConfigNotFound to be true for explicit path not found, got: %v", err)
 	}
 }
 

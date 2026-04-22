@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrConfigNotFound 表示配置文件未找到。
+var ErrConfigNotFound = errors.New("config file not found")
+
+// IsConfigNotFound 判断错误是否为配置文件未找到。
+func IsConfigNotFound(err error) bool {
+	return errors.Is(err, ErrConfigNotFound)
+}
 
 // envVarPattern matches ${VAR_NAME} placeholder syntax in token fields
 var envVarPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)}$`)
@@ -225,7 +234,7 @@ func resolveToken(token string) (string, error) {
 func FindConfig(explicitPath string) (string, error) {
 	if explicitPath != "" {
 		if _, err := os.Stat(explicitPath); err != nil {
-			return "", fmt.Errorf("config file not found: %s", explicitPath)
+			return "", fmt.Errorf("%w: %s", ErrConfigNotFound, explicitPath)
 		}
 		return explicitPath, nil
 	}
@@ -234,7 +243,7 @@ func FindConfig(explicitPath string) (string, error) {
 		return ".grepom.yml", nil
 	}
 
-	return "", fmt.Errorf("no config file found. Use -c to specify a config file or create .grepom.yml in current directory")
+	return "", fmt.Errorf("%w: use -c to specify a config file or create .grepom.yml in current directory", ErrConfigNotFound)
 }
 
 // FindResource finds a resource by name.
