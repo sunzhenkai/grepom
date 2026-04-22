@@ -74,7 +74,11 @@ clone 命令 SHALL 支持 `--concurrency` 参数（默认 4）控制并行克隆
 
 当 `--type` 为 `resources` 或 `groups` 时，位置参数和过滤标志不生效。
 
+`list` 命令的位置参数 SHALL 支持关键字 `groups` 和 `resources`，当位置参数为 `groups` 时等价于 `--type groups`，当位置参数为 `resources` 时等价于 `--type resources`。位置参数关键字优先级低于 `--type` 标志（即 `grepom list groups --type repos` 以 `--type repos` 为准）。
+
 `--remote` 标志 SHALL 支持 `--type groups`，通过 provider API 查询远程 groups/orgs 列表。`--remote` 不支持 `--type resources`。
+
+`list` 命令 SHALL 支持 `--no-push` 标志筛选有未推送提交的仓库，以及 `--no-commit` 标志筛选有未提交更改的仓库。两个标志仅对本地仓库列表生效（`--type repos` 默认模式），在 `--remote` 模式下静默忽略。
 
 list 命令的 flag SHALL 支持短别名：`-t`（`--type`）、`-r`（`--remote`）、`-g`（`--group`）、`-R`（`--resource`）。
 
@@ -117,6 +121,18 @@ list 命令的 flag SHALL 支持短别名：`-t`（`--type`）、`-r`（`--remot
 #### Scenario: --type 列出 groups
 - **WHEN** user runs `grepom list --type groups`
 - **THEN** 系统列出所有已配置的 groups，输出包含名称、关联 resource、路径、recursive 和 repo 数量
+
+#### Scenario: 位置参数 groups 等价 --type groups
+- **WHEN** user runs `grepom list groups`
+- **THEN** 系统行为与 `grepom list --type groups` 完全一致，列出所有已配置的 groups
+
+#### Scenario: 位置参数 resources 等价 --type resources
+- **WHEN** user runs `grepom list resources`
+- **THEN** 系统行为与 `grepom list --type resources` 完全一致，列出所有已配置的 resources
+
+#### Scenario: --type 标志优先于位置参数关键字
+- **WHEN** user runs `grepom list groups --type repos`
+- **THEN** 系统以 `--type repos` 为准，列出所有 repos（`groups` 位置参数被忽略）
 
 #### Scenario: --remote --type groups 远程列出 groups
 - **WHEN** user runs `grepom list --remote --type groups`

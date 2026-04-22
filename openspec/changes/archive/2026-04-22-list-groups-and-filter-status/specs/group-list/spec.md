@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: list groups 命令
 系统 SHALL 提供 `grepom list --type groups` 命令，列出所有已配置的分组。输出以表格形式显示 NAME、RESOURCE、PATH、LOCAL_PATH、RECURSIVE、REPOS 列。
 

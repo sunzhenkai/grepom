@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"github.com/wii/grepom/config"
+	gitpkg "github.com/wii/grepom/git"
 	"github.com/wii/grepom/provider"
 	"github.com/wii/grepom/repo"
 )
@@ -18,31 +20,48 @@ var (
 	listType     string
 	listRemote   bool
 	listAll      bool
+	listNoPush   bool
+	listNoCommit bool
 )
 
 var listCmd = &cobra.Command{
-	Use:   "list [name]",
+	Use:   "list [name|groups|resources]",
 	Short: "List resources, groups, or repositories",
 	Long: `List resources, groups, or repositories based on the --type flag.
 
-By default (or with --type repos), lists all discovered repositories.
+By default, lists only repos that need attention (unpushed commits or uncommitted changes).
+Use --all to list all repos including clean ones.
 Use --type resources to list configured resources, or --type groups to list configured groups.
 Use --remote to query repos directly from the provider API.
-Use --all to include disabled and excluded repos.`,
-	Example: `  grepom list                            # List all repos
+
+Shortcut: use "groups" or "resources" as a positional argument instead of --type.
+E.g. "grepom list groups" is equivalent to "grepom list --type groups".`,
+	Example: `  grepom list                            # List repos needing attention (unpushed/uncommitted)
+  grepom list --all                      # List all repos with status
+  grepom list --no-push                  # List only repos with unpushed commits
+  grepom list --no-commit                # List only repos with uncommitted changes
   grepom list web-app                     # List a specific repo
-  grepom list --group frontend            # List repos in a group
-  grepom list --resource work-gl          # List repos from a resource
-  grepom list --type resources            # List all configured resources
-  grepom list --type groups               # List all configured groups
-  grepom list --all                       # Include disabled and excluded repos
+  grepom list --group frontend            # List attention repos in a group
+  grepom list --resource work-gl          # List attention repos from a resource
+  grepom list groups                      # List all configured groups
+  grepom list resources                   # List all configured resources
   grepom list --remote                    # List remote repos from provider API
-  grepom list --remote --group frontend   # List remote repos for a group`,
+  grepom list --all --remote --group fe   # List all remote repos for a group`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
 			return err
+		}
+
+		// 位置参数关键字 groups/resources 快捷方式（仅当 --type 未被显式设置时生效）
+		if len(args) > 0 && !cmd.Flags().Changed("type") {
+			switch args[0] {
+			case "groups":
+				listType = "groups"
+			case "resources":
+				listType = "resources"
+			}
 		}
 
 		// --remote 不支持 --type resources
@@ -72,7 +91,9 @@ func init() {
 	listCmd.Flags().StringVarP(&listResource, "resource", "R", "", "filter by resource name")
 	listCmd.Flags().StringVarP(&listType, "type", "t", "repos", "type to list: repos, resources, groups")
 	listCmd.Flags().BoolVarP(&listRemote, "remote", "r", false, "list remote repos from provider API instead of local config")
-	listCmd.Flags().BoolVarP(&listAll, "all", "a", false, "include disabled and excluded repos")
+	listCmd.Flags().BoolVarP(&listAll, "all", "a", false, "list all repos (disable attention filter, include disabled/excluded)")
+	listCmd.Flags().BoolVar(&listNoPush, "no-push", false, "only show repos with unpushed commits (ahead > 0)")
+	listCmd.Flags().BoolVar(&listNoCommit, "no-commit", false, "only show repos with uncommitted changes (dirty > 0)")
 	rootCmd.AddCommand(listCmd)
 }
 
@@ -82,7 +103,8 @@ func runListRepos(cfg *config.Config, args []string) error {
 		Resource:        listResource,
 		IncludeDisabled: listAll,
 	}
-	if len(args) > 0 {
+	// 位置参数：当为 groups/resources 时已被 RunE 处理，此处仅处理仓库名过滤
+	if len(args) > 0 && args[0] != "groups" && args[0] != "resources" {
 		filter.Name = args[0]
 	}
 
@@ -92,25 +114,75 @@ func runListRepos(cfg *config.Config, args []string) error {
 		return err
 	}
 
-	if len(repos) == 0 {
+	// 为每个 repo 计算 git 状态
+	type repoWithStatus struct {
+		repo   provider.Repo
+		status string
+	}
+
+	var entries []repoWithStatus
+	for _, r := range repos {
+		fullPath := repo.FullPath(cfg.Base, r)
+		st := gitpkg.GetStatus(fullPath)
+
+		var label string
+		switch {
+		case !st.Cloned || st.NotARepo:
+			label = "not cloned"
+		case !st.Clean:
+			label = fmt.Sprintf("dirty(%d)", st.Dirty)
+		case st.Ahead > 0:
+			label = fmt.Sprintf("ahead %d", st.Ahead)
+		case st.Behind > 0:
+			label = fmt.Sprintf("behind %d", st.Behind)
+		default:
+			label = "clean"
+		}
+
+		entries = append(entries, repoWithStatus{repo: r, status: label})
+	}
+
+	// 状态过滤
+	if !listAll {
+		var filtered []repoWithStatus
+		for _, e := range entries {
+			if listNoPush || listNoCommit {
+				// 显式指定了 --no-push / --no-commit：按具体条件过滤
+				if e.status == "not cloned" {
+					continue
+				}
+				match := false
+				if listNoPush && strings.HasPrefix(e.status, "ahead") {
+					match = true
+				}
+				if listNoCommit && strings.HasPrefix(e.status, "dirty") {
+					match = true
+				}
+				if match {
+					filtered = append(filtered, e)
+				}
+			} else {
+				// 默认 attention 模式：只展示 dirty 或 ahead 的 repo
+				if strings.HasPrefix(e.status, "dirty") || strings.HasPrefix(e.status, "ahead") {
+					filtered = append(filtered, e)
+				}
+			}
+		}
+		entries = filtered
+	}
+
+	if len(entries) == 0 {
 		fmt.Println("No repositories found.")
 		return nil
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tPATH\tGROUP\tRESOURCE\tCLONED")
+	fmt.Fprintln(w, "NAME\tPATH\tGROUP\tRESOURCE\tSTATUS")
 
-	for _, r := range repos {
-		cloned := "no"
-		fullPath := repo.FullPath(cfg.Base, r)
-		if _, err := os.Stat(fullPath); err == nil {
-			cloned = "yes"
-		}
-
-		// Add status label for disabled/excluded repos when --all is used
-		name := r.Name
-		if listAll && r.DisabledReason != "" {
-			switch r.DisabledReason {
+	for _, e := range entries {
+		name := e.repo.Name
+		if listAll && e.repo.DisabledReason != "" {
+			switch e.repo.DisabledReason {
 			case "disabled":
 				name = name + " [disabled]"
 			case "excluded":
@@ -118,7 +190,7 @@ func runListRepos(cfg *config.Config, args []string) error {
 			}
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, r.Path, r.GroupName, r.Resource, cloned)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, e.repo.Path, e.repo.GroupName, e.repo.Resource, e.status)
 	}
 	w.Flush()
 
