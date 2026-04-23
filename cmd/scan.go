@@ -54,7 +54,7 @@ func init() {
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
-	cfg, err := loadConfig()
+	_, cfg, err := loadConfig()
 	if err != nil {
 		// 配置文件不存在时回退到扫描当前目录
 		if config.IsConfigNotFound(err) {

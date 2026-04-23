@@ -24,7 +24,7 @@ var statusCmd = &cobra.Command{
   grepom status --group frontend  # Status of repos in a group`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

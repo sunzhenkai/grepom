@@ -49,7 +49,7 @@ E.g. "grepom list groups" is equivalent to "grepom list --type groups".`,
   grepom list --all --remote --group fe   # List all remote repos for a group`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

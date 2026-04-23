@@ -26,7 +26,7 @@ var searchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		keyword := args[0]
 
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

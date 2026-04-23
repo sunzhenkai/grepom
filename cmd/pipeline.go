@@ -102,7 +102,7 @@ func resolvePipelineInput(cfg *config.Config, repoName string) (cicd.PipelinePro
 }
 
 func runPipelineList(cmd *cobra.Command, args []string) error {
-	cfg, err := loadConfig()
+	_, cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func runPipelineList(cmd *cobra.Command, args []string) error {
 }
 
 func runPipelineWatch(cmd *cobra.Command, args []string) error {
-	cfg, err := loadConfig()
+	_, cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}

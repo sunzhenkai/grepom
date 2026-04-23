@@ -31,7 +31,7 @@ Only new repos are added to the config; existing entries are never removed.`,
   grepom sync --group frontend         # Sync a specific group by name
   grepom sync --resource work-gl       # Sync all groups using a specific resource`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

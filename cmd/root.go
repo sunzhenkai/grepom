@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/wii/grepom/config"
@@ -39,13 +40,22 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 }
 
-func loadConfig() (*config.Config, error) {
+func loadConfig() (string, *config.Config, error) {
 	config.SetVerbose(verbose)
 	path, err := config.FindConfig(configFile)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return config.Load(path)
+	// 确保返回绝对路径，因为 FindConfig 在当前目录找到时返回 ".grepom.yml"
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, err
+	}
+	cfg, err := config.Load(absPath)
+	if err != nil {
+		return "", nil, err
+	}
+	return absPath, cfg, nil
 }
 
 func resolvedConfigPath() (string, error) {

@@ -30,7 +30,7 @@ Use --apply to actually delete. Use --force to skip safety checks for dirty/ahea
   grepom prune --group frontend         # Only prune repos in the frontend group
   grepom prune --resource work-gl       # Only prune repos from the work-gl resource`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

@@ -289,6 +289,33 @@ func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 	return result
 }
 
+// ApplyExactFirstSearch performs exact-first then substring case-insensitive matching.
+// It first tries exact name match; if no results, falls back to substring match.
+// Group and resource filters are always applied.
+func ApplyExactFirstSearch(repos []provider.Repo, keyword string, filter Filter) []provider.Repo {
+	lower := strings.ToLower(keyword)
+
+	// Phase 1: exact match (case-insensitive)
+	var exact []provider.Repo
+	for _, r := range repos {
+		if strings.ToLower(r.Name) == lower {
+			if filter.Group != "" && r.GroupName != filter.Group {
+				continue
+			}
+			if filter.Resource != "" && r.Resource != filter.Resource {
+				continue
+			}
+			exact = append(exact, r)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+
+	// Phase 2: substring match fallback
+	return ApplySearchFilter(repos, keyword, filter)
+}
+
 // ApplySearchFilter filters repos by case-insensitive substring match on name,
 // then applies exact group/resource filters.
 func ApplySearchFilter(repos []provider.Repo, keyword string, filter Filter) []provider.Repo {

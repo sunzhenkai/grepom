@@ -34,7 +34,7 @@ on their default branch and have a clean working tree. Use --force to skip safet
 			return fmt.Errorf("--concurrency must be a positive integer, got %d", pullConcurrency)
 		}
 
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

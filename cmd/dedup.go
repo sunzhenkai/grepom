@@ -29,7 +29,7 @@ Use --apply to actually write changes.`,
   grepom dedup --group core-team --reference infra,legacy # Dedup against multiple groups
   grepom dedup --group core-team --apply                 # Apply changes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}

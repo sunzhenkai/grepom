@@ -584,7 +584,7 @@ func interactiveAddGroupRepo() {
 // --- Interactive sync (task 8.5) ---
 
 func interactiveSync() {
-	cfg, err := loadConfig()
+	_, cfg, err := loadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
@@ -722,7 +722,7 @@ func interactiveSync() {
 // --- Interactive clone (task 8.6) ---
 
 func interactiveClone() {
-	cfg, err := loadConfig()
+	_, cfg, err := loadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
@@ -851,7 +851,7 @@ func interactiveClone() {
 // --- Interactive pull ---
 
 func interactivePull() {
-	cfg, err := loadConfig()
+	_, cfg, err := loadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
@@ -991,7 +991,7 @@ func interactivePull() {
 // --- Interactive status (task 8.7) ---
 
 func interactiveStatus() {
-	cfg, err := loadConfig()
+	_, cfg, err := loadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return

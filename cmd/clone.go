@@ -31,7 +31,7 @@ var cloneCmd = &cobra.Command{
 			return fmt.Errorf("--concurrency must be a positive integer, got %d", cloneConcurrency)
 		}
 
-		cfg, err := loadConfig()
+		_, cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}
