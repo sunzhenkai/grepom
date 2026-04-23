@@ -249,7 +249,7 @@ func interactiveAddResource() {
 
 	path, err := resolvedConfigPath()
 	if err != nil {
-		path = configFile
+		path = defaultConfigPath()
 	}
 
 	res := config.Resource{
@@ -271,7 +271,7 @@ func interactiveAddGroup() {
 	// Need config to list resources
 	path, err := resolvedConfigPath()
 	if err != nil {
-		path = configFile
+		path = defaultConfigPath()
 	}
 
 	cfg, err := config.Load(path)
@@ -399,7 +399,7 @@ func interactiveAddRepo() {
 func interactiveAddStandaloneRepo() {
 	path, err := resolvedConfigPath()
 	if err != nil {
-		path = configFile
+		path = defaultConfigPath()
 	}
 
 	cfg, err := config.Load(path)
@@ -501,7 +501,7 @@ func interactiveAddStandaloneRepo() {
 func interactiveAddGroupRepo() {
 	path, err := resolvedConfigPath()
 	if err != nil {
-		path = configFile
+		path = defaultConfigPath()
 	}
 
 	cfg, err := config.Load(path)
@@ -592,7 +592,7 @@ func interactiveSync() {
 
 	configPath, err := resolvedConfigPath()
 	if err != nil {
-		configPath = configFile
+		configPath = defaultConfigPath()
 	}
 
 	// Determine scope

@@ -35,7 +35,7 @@ func Execute() {
 
 func init() {
 	cobra.EnablePrefixMatching = true
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", ".grepom.yml", "path to config file")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "path to config file (default: .grepom.yml in current or parent directory)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 }
 
@@ -50,4 +50,13 @@ func loadConfig() (*config.Config, error) {
 
 func resolvedConfigPath() (string, error) {
 	return config.FindConfig(configFile)
+}
+
+// defaultConfigPath 返回默认的配置文件路径（用于创建新配置）。
+// 当用户未通过 -c 指定路径时，返回 ".grepom.yml"。
+func defaultConfigPath() string {
+	if configFile != "" {
+		return configFile
+	}
+	return ".grepom.yml"
 }

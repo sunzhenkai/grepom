@@ -40,7 +40,7 @@ grepom clone                    # 克隆所有仓库
 
 ## 使用方法
 
-创建配置文件（默认为 `.grepom.yml`）：
+创建配置文件（默认为 `.grepom.yml`）。grepom 会从当前目录沿父目录链自动向上查找配置文件（类似 git 查找 `.git` 的行为），因此你可以在任意子目录中执行命令。
 
 ```yaml
 base: ~/projects
@@ -117,6 +117,11 @@ grepom status web-app               # 特定仓库的状态
 grepom search web                   # 按名称模糊搜索仓库
 grepom search web --group frontend  # 在指定组内搜索
 
+grepom dir                          # 输出 base 目录路径
+grepom dir web-app                  # 输出仓库的本地路径
+grepom dir web --group fe           # 在指定组内搜索并输出路径
+cd "$(grepom dir web-app)"          # 快速跳转到仓库目录
+
 # 敏感信息扫描
 grepom scan                         # 扫描所有已克隆仓库的工作区
 grepom scan --group frontend        # 仅扫描 frontend 组
@@ -164,7 +169,7 @@ grepom sync   # 使用解析后的 token 值
 
 | 标志 | 简写 | 默认值 | 描述 |
 |------|------|--------|------|
-| `--config` | `-c` | `.grepom.yml` | 配置文件路径 |
+| `--config` | `-c` | 自动查找 | 配置文件路径（默认从当前目录向上查找 `.grepom.yml`） |
 | `--verbose` | `-v` | `false` | 启用详细输出 |
 
 ## 构建

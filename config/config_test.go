@@ -646,6 +646,138 @@ groups:
 	}
 }
 
+// --- findConfigUpward tests ---
+
+func TestFindConfigUpward_CurrentDir(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".grepom.yml")
+	os.WriteFile(configPath, []byte("base: ~/projects"), 0644)
+
+	found, err := findConfigUpward(dir)
+	if err != nil {
+		t.Fatalf("findConfigUpward failed: %v", err)
+	}
+	if found != configPath {
+		t.Errorf("expected %s, got %s", configPath, found)
+	}
+}
+
+func TestFindConfigUpward_ParentDir(t *testing.T) {
+	parent := t.TempDir()
+	configPath := filepath.Join(parent, ".grepom.yml")
+	os.WriteFile(configPath, []byte("base: ~/projects"), 0644)
+
+	child := filepath.Join(parent, "subdir")
+	os.MkdirAll(child, 0755)
+
+	found, err := findConfigUpward(child)
+	if err != nil {
+		t.Fatalf("findConfigUpward failed: %v", err)
+	}
+	if found != configPath {
+		t.Errorf("expected %s, got %s", configPath, found)
+	}
+}
+
+func TestFindConfigUpward_MultiLevel(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".grepom.yml")
+	os.WriteFile(configPath, []byte("base: ~/projects"), 0644)
+
+	deep := filepath.Join(root, "a", "b", "c", "d")
+	os.MkdirAll(deep, 0755)
+
+	found, err := findConfigUpward(deep)
+	if err != nil {
+		t.Fatalf("findConfigUpward failed: %v", err)
+	}
+	if found != configPath {
+		t.Errorf("expected %s, got %s", configPath, found)
+	}
+}
+
+func TestFindConfigUpward_NotFound(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := findConfigUpward(dir)
+	if err == nil {
+		t.Fatal("expected error when no config found upward")
+	}
+	if !IsConfigNotFound(err) {
+		t.Errorf("expected ErrConfigNotFound, got: %v", err)
+	}
+}
+
+func TestFindConfigUpward_NestedConfig_NearestWins(t *testing.T) {
+	parent := t.TempDir()
+	parentConfig := filepath.Join(parent, ".grepom.yml")
+	os.WriteFile(parentConfig, []byte("base: ~/projects"), 0644)
+
+	child := filepath.Join(parent, "personal")
+	os.MkdirAll(child, 0755)
+	childConfig := filepath.Join(child, ".grepom.yml")
+	os.WriteFile(childConfig, []byte("base: ~/personal"), 0644)
+
+	grandchild := filepath.Join(child, "blog")
+	os.MkdirAll(grandchild, 0755)
+
+	// 从 grandchild 向上查找，应该找到最近的 child 中的配置
+	found, err := findConfigUpward(grandchild)
+	if err != nil {
+		t.Fatalf("findConfigUpward failed: %v", err)
+	}
+	if found != childConfig {
+		t.Errorf("expected nearest config %s, got %s", childConfig, found)
+	}
+}
+
+// --- FindConfig integration tests (upward search) ---
+
+func TestFindConfig_UpwardFromSubdirectory(t *testing.T) {
+	parent := t.TempDir()
+	configPath := filepath.Join(parent, ".grepom.yml")
+	os.WriteFile(configPath, []byte("base: ~/projects"), 0644)
+
+	child := filepath.Join(parent, "my-org", "web-app")
+	os.MkdirAll(child, 0755)
+
+	oldDir, _ := os.Getwd()
+	os.Chdir(child)
+	defer os.Chdir(oldDir)
+
+	found, err := FindConfig("")
+	if err != nil {
+		t.Fatalf("FindConfig failed: %v", err)
+	}
+	// 应该找到父目录的配置文件（绝对路径）
+	if filepath.Clean(found) != configPath {
+		t.Errorf("expected %s, got %s", configPath, filepath.Clean(found))
+	}
+}
+
+func TestFindConfig_CurrentDirTakesPrecedence(t *testing.T) {
+	parent := t.TempDir()
+	parentConfig := filepath.Join(parent, ".grepom.yml")
+	os.WriteFile(parentConfig, []byte("base: ~/parent"), 0644)
+
+	child := filepath.Join(parent, "child")
+	os.MkdirAll(child, 0755)
+	childConfig := filepath.Join(child, ".grepom.yml")
+	os.WriteFile(childConfig, []byte("base: ~/child"), 0644)
+
+	oldDir, _ := os.Getwd()
+	os.Chdir(child)
+	defer os.Chdir(oldDir)
+
+	found, err := FindConfig("")
+	if err != nil {
+		t.Fatalf("FindConfig failed: %v", err)
+	}
+	if found != ".grepom.yml" {
+		t.Errorf("expected .grepom.yml (current dir), got %s", found)
+	}
+}
+
 // --- FindConfig tests ---
 
 func TestFindConfig_ExplicitPath(t *testing.T) {

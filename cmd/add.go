@@ -49,7 +49,7 @@ var addResourceCmd = &cobra.Command{
 
 		path, err := resolvedConfigPath()
 		if err != nil {
-			path = configFile
+			path = defaultConfigPath()
 		}
 
 		res := config.Resource{
@@ -102,7 +102,7 @@ var addGroupCmd = &cobra.Command{
 
 		path, err := resolvedConfigPath()
 		if err != nil {
-			path = configFile
+			path = defaultConfigPath()
 		}
 
 		// Pre-add validation: check resource exists and name uniqueness
@@ -176,7 +176,7 @@ var addRepoCmd = &cobra.Command{
 
 		path, err := resolvedConfigPath()
 		if err != nil {
-			path = configFile
+			path = defaultConfigPath()
 		}
 
 		if addRepoGroup != "" {

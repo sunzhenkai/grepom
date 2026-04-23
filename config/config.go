@@ -231,7 +231,28 @@ func (r Resource) ResolvedToken() (string, error) {
 	return ResolveToken(r.Token)
 }
 
+// findConfigUpward 从 startDir 开始沿父目录链向上查找 .grepom.yml，
+// 直到找到配置文件或到达文件系统根目录。
+func findConfigUpward(startDir string) (string, error) {
+	dir := startDir
+	for {
+		candidate := filepath.Join(dir, ".grepom.yml")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// 已到达文件系统根目录
+			return "", ErrConfigNotFound
+		}
+		dir = parent
+	}
+}
+
 // FindConfig locates the configuration file.
+// When no explicit path is given, it first checks the current directory,
+// then walks up the directory tree looking for .grepom.yml (like git finds .git).
 func FindConfig(explicitPath string) (string, error) {
 	if explicitPath != "" {
 		if _, err := os.Stat(explicitPath); err != nil {
@@ -240,11 +261,22 @@ func FindConfig(explicitPath string) (string, error) {
 		return explicitPath, nil
 	}
 
+	// 先检查当前目录
 	if _, err := os.Stat(".grepom.yml"); err == nil {
 		return ".grepom.yml", nil
 	}
 
-	return "", fmt.Errorf("%w: use -c to specify a config file or create .grepom.yml in current directory", ErrConfigNotFound)
+	// 获取当前工作目录，向上遍历查找
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrConfigNotFound, err)
+	}
+
+	path, err := findConfigUpward(cwd)
+	if err != nil {
+		return "", fmt.Errorf("%w: use -c to specify a config file or create .grepom.yml in a parent directory", ErrConfigNotFound)
+	}
+	return path, nil
 }
 
 // FindResource finds a resource by name.

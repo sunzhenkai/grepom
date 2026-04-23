@@ -38,7 +38,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 
 		configPath, err := resolvedConfigPath()
 		if err != nil {
-			configPath = configFile
+			configPath = defaultConfigPath()
 		}
 
 		// Determine which groups to process

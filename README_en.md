@@ -40,7 +40,7 @@ grepom clone                    # Clone all repos
 
 ## Usage
 
-Create a config file (default: `.grepom.yml`):
+Create a config file (default: `.grepom.yml`). grepom automatically searches parent directories for the config file (similar to how git finds `.git`), so you can run commands from any subdirectory.
 
 ```yaml
 base: ~/projects
@@ -117,6 +117,11 @@ grepom status web-app               # Status of a specific repo
 grepom search web                   # Search repos by name (substring match)
 grepom search web --group frontend  # Search within a specific group
 
+grepom dir                          # Print base directory path
+grepom dir web-app                  # Print a repo's local path
+grepom dir web --group fe           # Search within a group and print path
+cd "$(grepom dir web-app)"          # Quickly jump to a repo directory
+
 # Secret Scanning
 grepom scan                         # Scan workspace of all cloned repos
 grepom scan --group frontend        # Scan only the frontend group
@@ -164,7 +169,7 @@ grepom sync   # uses the resolved token value
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--config` | `-c` | `.grepom.yml` | Path to config file |
+| `--config` | `-c` | auto-detect | Path to config file (default: searches for `.grepom.yml` upward) |
 | `--verbose` | `-v` | `false` | Enable verbose output |
 
 ## Build

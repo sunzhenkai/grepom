@@ -24,7 +24,7 @@ var initCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, err := resolvedConfigPath()
 		if err != nil {
-			path = configFile
+			path = defaultConfigPath()
 		}
 
 		if err := config.InitConfig(path, initBase); err != nil {

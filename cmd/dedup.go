@@ -36,7 +36,7 @@ Use --apply to actually write changes.`,
 
 		configPath, err := resolvedConfigPath()
 		if err != nil {
-			configPath = configFile
+			configPath = defaultConfigPath()
 		}
 
 		// 找到 target group
