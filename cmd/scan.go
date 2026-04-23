@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 
 	"github.com/spf13/cobra"
-	"github.com/wii/grepom/config"
 	"github.com/wii/grepom/git"
 	"github.com/wii/grepom/repo"
 	"github.com/wii/grepom/scanner"
@@ -22,6 +22,7 @@ var (
 	scanFormat      string
 	scanGitleaksCfg string
 	scanOutput      string
+	scanPath        string
 )
 
 var scanCmd = &cobra.Command{
@@ -30,11 +31,15 @@ var scanCmd = &cobra.Command{
 	Long: `Scan cloned repositories for sensitive information (SSH private keys, API tokens, passwords, AK/SK, etc.) using the gitleaks rules engine.
 
 By default, scans workspace files. Use --history to scan git history (including deleted commits).
-Supports --group and --resource flags to filter scan scope.`,
+Supports --group and --resource flags to filter scan scope.
+
+Use -p/--path to scan an arbitrary directory without needing a config file.
+When no config file exists in the current directory, scans the current directory.`,
 	Example: `  grepom scan                           # Scan workspace files of all cloned repos
   grepom scan --group frontend          # Scan only the frontend group
   grepom scan --resource work-gl        # Scan only repos under the work-gl resource
   grepom scan web-app                   # Scan only the web-app repo
+  grepom scan -p /path/to/project       # Scan a specific directory directly
   grepom scan --history                 # Scan workspace + git history
   grepom scan --format json             # Output in JSON format
   grepom scan --output results.txt      # Output results to file
@@ -50,18 +55,69 @@ func init() {
 	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "table", "output format: table, json")
 	scanCmd.Flags().StringVar(&scanGitleaksCfg, "gitleaks-config", "", "path to custom gitleaks.toml config file")
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "write scan results to file")
+	scanCmd.Flags().StringVarP(&scanPath, "path", "p", "", "scan a specific directory (ignores config file)")
 	rootCmd.AddCommand(scanCmd)
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
-	_, cfg, err := loadConfig()
+	// 分支 1: -p 指定了路径 → 直接扫描该路径，忽略配置文件
+	if scanPath != "" {
+		return runScanPath(scanPath)
+	}
+
+	// 分支 2: 当前目录有 .grepom.yml → 加载配置，扫描仓库
+	if _, err := os.Stat(".grepom.yml"); err == nil {
+		return runScanWithConfig(args)
+	}
+
+	// 分支 3: 无配置文件 → 扫描当前目录
+	return runScanCurrentDir()
+}
+
+// runScanPath 扫描指定路径，完全忽略配置文件。
+func runScanPath(path string) error {
+	// 验证路径存在
+	info, err := os.Stat(path)
 	if err != nil {
-		// 配置文件不存在时回退到扫描当前目录
-		if config.IsConfigNotFound(err) {
-			return runScanCurrentDir()
-		}
+		return fmt.Errorf("path %q does not exist: %w", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path %q is not a directory", path)
+	}
+
+	absPath, _ := filepath.Abs(path)
+	fmt.Fprintf(os.Stderr, "  Scanning %s...\n", absPath)
+
+	s := scanner.NewScanner(scanner.Options{
+		GitleaksConfigPath: scanGitleaksCfg,
+	})
+
+	ctx := context.Background()
+	var findings []scanner.Finding
+
+	if scanHistory {
+		findings, err = s.ScanGitHistory(ctx, path)
+	} else {
+		findings, err = s.ScanDir(ctx, path)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to scan %s: %w", path, err)
+	}
+
+	for i := range findings {
+		findings[i].Repo = absPath
+	}
+
+	return outputFindings(findings)
+}
+
+// runScanWithConfig 从当前目录的 .grepom.yml 加载配置并扫描仓库。
+func runScanWithConfig(args []string) error {
+	absPath, cfg, err := loadConfig()
+	if err != nil {
 		return err
 	}
+	_ = absPath
 
 	// 解析 repo 列表
 	filter := repo.Filter{
@@ -108,6 +164,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 		fmt.Println("No cloned repositories to scan.")
 		return nil
 	}
+
+	// 打印扫描目标摘要
+	targetNames := make([]string, len(targets))
+	for i, t := range targets {
+		targetNames[i] = t.name
+	}
+	printScanSummary(targetNames)
 
 	// 创建 scanner
 	s := scanner.NewScanner(scanner.Options{
@@ -179,6 +242,19 @@ func runScanCurrentDir() error {
 	}
 
 	return outputFindings(findings)
+}
+
+// printScanSummary 在 stderr 打印扫描目标摘要。
+// 仓库数量 ≤5 时逐个列出，>5 时显示前 5 个 + "...and N more"。
+func printScanSummary(names []string) {
+	const maxShow = 5
+	if len(names) <= maxShow {
+		fmt.Fprintf(os.Stderr, "  Scanning %s...\n", joinWithComma(names))
+	} else {
+		shown := joinWithComma(names[:maxShow])
+		remaining := len(names) - maxShow
+		fmt.Fprintf(os.Stderr, "  Scanning %s, ...and %d more\n", shown, remaining)
+	}
 }
 
 // outputFindings 根据格式标志将扫描结果输出到指定目标。

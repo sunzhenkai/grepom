@@ -124,6 +124,7 @@ cd "$(grepom dir web-app)"          # 快速跳转到仓库目录
 
 # 敏感信息扫描
 grepom scan                         # 扫描所有已克隆仓库的工作区
+grepom scan -p /path/to/project     # 直接扫描指定目录（无需配置文件）
 grepom scan --group frontend        # 仅扫描 frontend 组
 grepom scan --history               # 扫描工作区 + git 历史
 grepom scan --format json           # JSON 格式输出

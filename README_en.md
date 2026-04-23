@@ -124,6 +124,7 @@ cd "$(grepom dir web-app)"          # Quickly jump to a repo directory
 
 # Secret Scanning
 grepom scan                         # Scan workspace of all cloned repos
+grepom scan -p /path/to/project     # Scan a specific directory directly (no config needed)
 grepom scan --group frontend        # Scan only the frontend group
 grepom scan --history               # Scan workspace + git history
 grepom scan --format json           # Output in JSON format

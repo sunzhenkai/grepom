@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: scan 命令在无配置文件时扫描当前目录
 系统 SHALL 在执行 `grepom scan` 时，仅在当前目录查找 `.grepom.yml` 配置文件（不沿父目录链向上遍历）。如果当前目录没有 `.grepom.yml`，系统 SHALL 自动回退到扫描当前工作目录（`.`）模式，使用与有配置时相同的 gitleaks 引擎和输出格式。系统 SHALL 在此模式下提示用户正在扫描当前目录。
@@ -22,14 +22,3 @@
 #### Scenario: 当前目录不是 git 仓库时仍可扫描
 - **WHEN** 用户在非 git 仓库的目录中执行 `grepom scan`（无配置文件）
 - **THEN** 系统仍扫描该目录下的文件内容，返回发现的敏感信息
-
-### Requirement: scan 命令无配置时支持所有输出选项
-系统 SHALL 在无配置文件模式下支持与有配置时相同的输出选项，包括 `--format`（table/json）、`--output`（输出到文件）和 `--gitleaks-config`（自定义规则）。
-
-#### Scenario: 无配置时使用 JSON 格式输出
-- **WHEN** 用户执行 `grepom scan --format json`（无配置文件）
-- **THEN** 系统以 JSON 数组格式输出当前目录的扫描结果
-
-#### Scenario: 无配置时使用自定义 gitleaks 规则
-- **WHEN** 用户执行 `grepom scan --gitleaks-config ./rules.toml`（无配置文件）
-- **THEN** 系统使用指定的自定义规则扫描当前目录
