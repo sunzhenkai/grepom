@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -27,17 +28,19 @@ func NewResolver(cfg *config.Config) *Resolver {
 
 // resolveInternal builds the full repo list from all groups and standalone repos,
 // setting DisabledReason for each repo that should be excluded.
-func (r *Resolver) resolveInternal() []provider.Repo {
+// Token environment variable placeholders are resolved lazily: only enabled repos
+// that will actually be used have their tokens resolved.
+func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 	var allRepos []provider.Repo
 
 	for _, g := range r.cfg.Groups {
 		var res *config.Resource
 		if g.Resource != "" {
-			r, ok := r.cfg.Resources[g.Resource]
+			rc, ok := r.cfg.Resources[g.Resource]
 			if !ok {
 				continue
 			}
-			res = &r
+			res = &rc
 		}
 
 		if res != nil {
@@ -53,6 +56,19 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 			hasGroupSSHKey := g.SSHKey != ""
 			if sshKey == "" {
 				sshKey = res.SSHKey
+			}
+
+			// Check if resource/group is disabled before resolving token
+			resourceDisabled := !res.IsEnabled()
+			groupDisabled := !g.IsEnabled()
+
+			// Lazily resolve token only when resource and group are both enabled
+			if !resourceDisabled && !groupDisabled {
+				resolved, err := config.ResolveToken(token)
+				if err != nil {
+					return nil, fmt.Errorf("group %q (resource %q): %w", g.Name, g.Resource, err)
+				}
+				token = resolved
 			}
 
 			for _, gr := range g.Repos {
@@ -73,9 +89,9 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 				}
 
 				// Determine exclusion reason (priority: resource > group > exclude_repos)
-				if !res.IsEnabled() {
+				if resourceDisabled {
 					pRepo.DisabledReason = "disabled"
-				} else if !g.IsEnabled() {
+				} else if groupDisabled {
 					pRepo.DisabledReason = "disabled"
 				} else if IsExcluded(g.ExcludeRepos, gr.Name, gr.Path) {
 					pRepo.DisabledReason = "excluded"
@@ -131,6 +147,19 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 				sshKey = res.SSHKey
 			}
 
+			// Check if resource/repo is disabled before resolving token
+			resourceDisabled := !res.IsEnabled()
+			repoDisabled := !repo.IsEnabled()
+
+			// Lazily resolve token only when resource and repo are both enabled
+			if !resourceDisabled && !repoDisabled {
+				resolved, err := config.ResolveToken(token)
+				if err != nil {
+					return nil, fmt.Errorf("repo %q (resource %q): %w", repo.Name, repo.Resource, err)
+				}
+				token = resolved
+			}
+
 			repoPath := ExtractRemotePath(repo.URL)
 
 			pRepo := provider.Repo{
@@ -147,9 +176,9 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 			}
 
 			// Determine exclusion reason (priority: resource > repo)
-			if !res.IsEnabled() {
+			if resourceDisabled {
 				pRepo.DisabledReason = "disabled"
-			} else if !repo.IsEnabled() {
+			} else if repoDisabled {
 				pRepo.DisabledReason = "disabled"
 			}
 
@@ -171,7 +200,7 @@ func (r *Resolver) resolveInternal() []provider.Repo {
 		}
 	}
 
-	return allRepos
+	return allRepos, nil
 }
 
 // IsExcluded checks if a repo should be excluded based on the exclude list.
@@ -199,7 +228,10 @@ func hasWildcard(pattern string) bool {
 
 // Resolve builds the full repo list, excluding disabled and excluded repos.
 func (r *Resolver) Resolve() ([]provider.Repo, error) {
-	allRepos := r.resolveInternal()
+	allRepos, err := r.resolveInternal()
+	if err != nil {
+		return nil, err
+	}
 
 	// Filter out disabled/excluded repos
 	var enabled []provider.Repo
@@ -214,7 +246,10 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 // ResolveAndFilter builds the repo list and applies the given filter.
 // When filter.IncludeDisabled is true, disabled/excluded repos are included in results.
 func (r *Resolver) ResolveAndFilter(filter Filter) ([]provider.Repo, error) {
-	allRepos := r.resolveInternal()
+	allRepos, err := r.resolveInternal()
+	if err != nil {
+		return nil, err
+	}
 
 	// If IncludeDisabled is false, filter out disabled/excluded repos
 	if !filter.IncludeDisabled {

@@ -61,8 +61,8 @@ repos:
 	if !ok {
 		t.Fatal("expected resource 'work-gl'")
 	}
-	if res.Token != "glpat-xxx" {
-		t.Errorf("token not expanded, got: %s", res.Token)
+	if res.Token != "${TEST_TOKEN}" {
+		t.Errorf("token should remain as placeholder (lazy resolution), got: %s", res.Token)
 	}
 	if res.Provider != "gitlab" {
 		t.Errorf("expected provider gitlab, got: %s", res.Provider)
@@ -211,12 +211,86 @@ groups:
 	path := filepath.Join(dir, "test.yml")
 	os.WriteFile(path, []byte(content), 0644)
 
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for undefined env var in token")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load should succeed with unresolved env var (deferred resolution), got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "UNDEFINED_VAR") {
-		t.Errorf("error should mention the env var name, got: %v", err)
+	// Token should remain as placeholder string
+	if cfg.Resources["my-res"].Token != "${UNDEFINED_VAR}" {
+		t.Errorf("expected token to remain as placeholder '${UNDEFINED_VAR}', got: %s", cfg.Resources["my-res"].Token)
+	}
+}
+
+func TestLoad_MultipleResourcesPartialEnvVar(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  github:
+    provider: github
+    url: github.com
+    token: ${GITHUB_TEST_TOKEN}
+  gitlab:
+    provider: gitlab
+    url: https://gitlab.com
+    token: ${GITLAB_UNDEF_TOKEN}
+groups:
+  - name: fe
+    resource: github
+    path: my-org/frontend
+`
+	os.Setenv("GITHUB_TEST_TOKEN", "ghp-xxx")
+	defer os.Unsetenv("GITHUB_TEST_TOKEN")
+	os.Unsetenv("GITLAB_UNDEF_TOKEN")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load should succeed even with partial env vars, got: %v", err)
+	}
+	// Both tokens remain as placeholders
+	if cfg.Resources["github"].Token != "${GITHUB_TEST_TOKEN}" {
+		t.Errorf("github token should remain as placeholder, got: %s", cfg.Resources["github"].Token)
+	}
+	if cfg.Resources["gitlab"].Token != "${GITLAB_UNDEF_TOKEN}" {
+		t.Errorf("gitlab token should remain as placeholder, got: %s", cfg.Resources["gitlab"].Token)
+	}
+}
+
+func TestLoad_DisabledResourceNoTokenResolve(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  disabled-gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: ${NEVER_SET_TOKEN}
+    enabled: false
+  github:
+    provider: github
+    url: github.com
+    token: ${GITHUB_TOKEN_SET}
+groups:
+  - name: fe
+    resource: github
+    path: my-org/frontend
+`
+	os.Setenv("GITHUB_TOKEN_SET", "ghp-xxx")
+	defer os.Unsetenv("GITHUB_TOKEN_SET")
+	os.Unsetenv("NEVER_SET_TOKEN")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load should succeed with disabled resource, got: %v", err)
+	}
+	if cfg.Resources["disabled-gl"].Token != "${NEVER_SET_TOKEN}" {
+		t.Errorf("disabled resource token should remain as placeholder, got: %s", cfg.Resources["disabled-gl"].Token)
 	}
 }
 
@@ -335,7 +409,7 @@ repos:
 // --- Token placeholder tests ---
 
 func TestResolveToken_PlainText(t *testing.T) {
-	result, err := resolveToken("glpat-xxxxxxxxxxxx")
+	result, err := ResolveToken("glpat-xxxxxxxxxxxx")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -348,7 +422,7 @@ func TestResolveToken_EnvVar(t *testing.T) {
 	os.Setenv("MY_TOKEN", "secret-value")
 	defer os.Unsetenv("MY_TOKEN")
 
-	result, err := resolveToken("${MY_TOKEN}")
+	result, err := ResolveToken("${MY_TOKEN}")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -358,7 +432,7 @@ func TestResolveToken_EnvVar(t *testing.T) {
 }
 
 func TestResolveToken_Empty(t *testing.T) {
-	result, err := resolveToken("")
+	result, err := ResolveToken("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -370,7 +444,7 @@ func TestResolveToken_Empty(t *testing.T) {
 func TestResolveToken_UndefinedEnvVar(t *testing.T) {
 	os.Unsetenv("DEFINITELY_NOT_SET_TOKEN")
 
-	_, err := resolveToken("${DEFINITELY_NOT_SET_TOKEN}")
+	_, err := ResolveToken("${DEFINITELY_NOT_SET_TOKEN}")
 	if err == nil {
 		t.Fatal("expected error for undefined env var")
 	}
@@ -403,9 +477,10 @@ groups:
 		t.Fatalf("Load failed: %v", err)
 	}
 
+	// Token remains as placeholder (lazy resolution)
 	res := cfg.Resources["work-gl"]
-	if res.Token != "glpat-write-test" {
-		t.Fatalf("expected resolved token, got: %s", res.Token)
+	if res.Token != "${TEST_WRITE_TOKEN}" {
+		t.Fatalf("expected token to remain as placeholder, got: %s", res.Token)
 	}
 
 	// Add a repo and write back

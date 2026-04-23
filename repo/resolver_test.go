@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -1022,4 +1023,230 @@ func TestIsExcluded(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Lazy token resolution tests ---
+
+func TestResolve_LazyTokenResolution_Success(t *testing.T) {
+	os.Setenv("LAZY_RESOLVE_TOKEN", "resolved-secret")
+	defer os.Unsetenv("LAZY_RESOLVE_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "${LAZY_RESOLVE_TOKEN}"},
+		},
+		Groups: []config.Group{
+			{
+				Name:      "fe",
+				Resource:  "gl",
+				Path:      "my-org/frontend",
+				LocalPath: "./fe",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/my-org/frontend/app.git", Path: "my-org/frontend/app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+	if repos[0].Token != "resolved-secret" {
+		t.Errorf("expected resolved token 'resolved-secret', got: %s", repos[0].Token)
+	}
+}
+
+func TestResolve_LazyTokenResolution_FailsWithUndefinedEnvVar(t *testing.T) {
+	os.Unsetenv("LAZY_UNDEF_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "${LAZY_UNDEF_TOKEN}"},
+		},
+		Groups: []config.Group{
+			{
+				Name:      "fe",
+				Resource:  "gl",
+				Path:      "my-org/frontend",
+				LocalPath: "./fe",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/my-org/frontend/app.git", Path: "my-org/frontend/app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	_, err := resolver.Resolve()
+	if err == nil {
+		t.Fatal("expected error for undefined env var during lazy resolution")
+	}
+}
+
+func TestResolve_LazyTokenResolution_ErrorContext(t *testing.T) {
+	os.Unsetenv("CONTEXT_TEST_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"work-gl": {Provider: "gitlab", URL: "gitlab.com", Token: "${CONTEXT_TEST_TOKEN}"},
+		},
+		Groups: []config.Group{
+			{
+				Name:      "frontend",
+				Resource:  "work-gl",
+				Path:      "my-org/frontend",
+				LocalPath: "./fe",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/my-org/frontend/app.git", Path: "my-org/frontend/app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	_, err := resolver.Resolve()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "frontend") {
+		t.Errorf("error should contain group name 'frontend', got: %s", errMsg)
+	}
+	if !contains(errMsg, "work-gl") {
+		t.Errorf("error should contain resource name 'work-gl', got: %s", errMsg)
+	}
+	if !contains(errMsg, "CONTEXT_TEST_TOKEN") {
+		t.Errorf("error should contain env var name 'CONTEXT_TEST_TOKEN', got: %s", errMsg)
+	}
+}
+
+func TestResolve_LazyTokenResolution_DisabledResource(t *testing.T) {
+	os.Unsetenv("DISABLED_RES_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"disabled-gl": {Provider: "gitlab", URL: "gitlab.com", Token: "${DISABLED_RES_TOKEN}", Enabled: boolPtr(false)},
+			"github":      {Provider: "github", URL: "github.com", Token: "plain-token"},
+		},
+		Groups: []config.Group{
+			{
+				Name:      "disabled-group",
+				Resource:  "disabled-gl",
+				Path:      "my-org/disabled",
+				LocalPath: "./disabled",
+				Repos: []config.GroupRepo{
+					{Name: "old-app", URL: "https://gitlab.com/my-org/disabled/old-app.git", Path: "my-org/disabled/old-app"},
+				},
+			},
+			{
+				Name:      "active-group",
+				Resource:  "github",
+				Path:      "my-org/active",
+				LocalPath: "./active",
+				Repos: []config.GroupRepo{
+					{Name: "new-app", URL: "https://github.com/my-org/active/new-app.git", Path: "my-org/active/new-app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve should succeed with disabled resource, got: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 enabled repo, got %d", len(repos))
+	}
+	if repos[0].Name != "new-app" {
+		t.Errorf("expected repo 'new-app', got: %s", repos[0].Name)
+	}
+	if repos[0].Token != "plain-token" {
+		t.Errorf("expected plain token, got: %s", repos[0].Token)
+	}
+}
+
+func TestResolve_LazyTokenResolution_GroupTokenOverride(t *testing.T) {
+	os.Setenv("GROUP_OVERRIDE_TOKEN", "group-secret")
+	defer os.Unsetenv("GROUP_OVERRIDE_TOKEN")
+	os.Unsetenv("RESOURCE_DEFAULT_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "${RESOURCE_DEFAULT_TOKEN}"},
+		},
+		Groups: []config.Group{
+			{
+				Name:      "fe",
+				Resource:  "gl",
+				Path:      "my-org/frontend",
+				LocalPath: "./fe",
+				Token:     "${GROUP_OVERRIDE_TOKEN}",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/my-org/frontend/app.git", Path: "my-org/frontend/app"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if repos[0].Token != "group-secret" {
+		t.Errorf("expected group override token 'group-secret', got: %s", repos[0].Token)
+	}
+}
+
+func TestResolve_LazyTokenResolution_StandaloneRepo(t *testing.T) {
+	os.Unsetenv("STANDALONE_UNDEF_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "${STANDALONE_UNDEF_TOKEN}"},
+		},
+		Repos: []config.Repo{
+			{Name: "dotfiles", Resource: "gl", URL: "https://gitlab.com/me/dotfiles.git", LocalPath: "./dotfiles"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	_, err := resolver.Resolve()
+	if err == nil {
+		t.Fatal("expected error for undefined env var in standalone repo")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "dotfiles") {
+		t.Errorf("error should contain repo name 'dotfiles', got: %s", errMsg)
+	}
+	if !contains(errMsg, "gl") {
+		t.Errorf("error should contain resource name 'gl', got: %s", errMsg)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

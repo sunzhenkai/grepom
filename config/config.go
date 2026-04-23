@@ -158,45 +158,24 @@ func Load(path string) (*Config, error) {
 		cfg.Repos = []Repo{}
 	}
 
-	// Save raw token values and resolve environment variable placeholders
+	// Save raw token values for write-back preservation.
+	// Token environment variable resolution is deferred to usage time (lazy resolution).
 	cfg.rawTokens = make(map[string]string)
 	for name, res := range cfg.Resources {
-		raw := res.Token
-		cfg.rawTokens[name] = raw
-
-		resolved, err := resolveToken(raw)
-		if err != nil {
-			return nil, fmt.Errorf("config: resource %q: %w", name, err)
-		}
-		res.Token = resolved
-		cfg.Resources[name] = res
+		cfg.rawTokens[name] = res.Token
 	}
 
-	// Resolve Group tokens (supports ${ENV_VAR} syntax)
 	cfg.rawGroupTokens = make(map[int]string)
 	for i, g := range cfg.Groups {
 		if g.Token != "" {
 			cfg.rawGroupTokens[i] = g.Token
-			resolved, err := resolveToken(g.Token)
-			if err != nil {
-				return nil, fmt.Errorf("config: group %q: %w", g.Name, err)
-			}
-			g.Token = resolved
-			cfg.Groups[i] = g
 		}
 	}
 
-	// Resolve Repo tokens (supports ${ENV_VAR} syntax)
 	cfg.rawRepoTokens = make(map[int]string)
 	for i, r := range cfg.Repos {
 		if r.Token != "" {
 			cfg.rawRepoTokens[i] = r.Token
-			resolved, err := resolveToken(r.Token)
-			if err != nil {
-				return nil, fmt.Errorf("config: repo %q: %w", r.Name, err)
-			}
-			r.Token = resolved
-			cfg.Repos[i] = r
 		}
 	}
 
@@ -210,9 +189,10 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// resolveToken checks if the token is an environment variable placeholder (${VAR})
+// ResolveToken checks if the token is an environment variable placeholder (${VAR})
 // and resolves it to the actual value. Returns the original value if not a placeholder.
-func resolveToken(token string) (string, error) {
+// Returns an error if the placeholder references an unset environment variable.
+func ResolveToken(token string) (string, error) {
 	if token == "" {
 		return "", nil
 	}
@@ -445,7 +425,7 @@ func AddResource(configPath, name string, resource Resource) error {
 
 	// Save raw token and resolve it for runtime use
 	rawToken := resource.Token
-	resolved, err := resolveToken(rawToken)
+	resolved, err := ResolveToken(rawToken)
 	if err != nil {
 		return err
 	}
