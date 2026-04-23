@@ -670,9 +670,15 @@ func interactiveSync() {
 
 		config.Verbose("syncing group %q (resource: %s, path: %s)", g.Name, g.Resource, g.Path)
 
+		resolvedToken, err := res.ResolvedToken()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: group %q (resource %q): %v\n", g.Name, g.Resource, err)
+			continue
+		}
+
 		params := provider.ListReposParams{
 			ServerURL: res.URL,
-			Token:     res.Token,
+			Token:     resolvedToken,
 		}
 
 		if res.Provider == "github" {

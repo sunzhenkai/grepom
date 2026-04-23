@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: token 支持环境变量占位符
 配置文件中 resource 的 `token` 字段 SHALL 支持 `${ENV_VAR}` 占位符语法。系统在实际使用该 token 时（而非配置加载时）从环境变量读取实际值。`ResolveToken()` SHALL 在解析前自动清理 token 值首尾成对的单引号或双引号（`'...'` 或 `"..."`），以兼容 YAML 和 CLI 参数中引号包裹的场景。
 
@@ -39,14 +41,3 @@
 #### Scenario: add resource 时保留 token 占位符
 - **WHEN** 用户运行 `grepom add resource --name work-gl --token '${GITLAB_TOKEN}' --provider gitlab ...`
 - **THEN** 配置文件中 token 字段写入 `${GITLAB_TOKEN}`
-
-### Requirement: 仅 token 字段支持环境变量占位符
-系统 SHALL 仅对 Resource.Token 字段进行环境变量占位符解析，不对配置文件其他字段做全局环境变量展开。
-
-#### Scenario: base 路径中的波浪线仍正常工作
-- **WHEN** 配置文件中 base 为 `~/projects`
-- **THEN** 系统正常展开波浪线为用户 home 目录
-
-#### Scenario: 其他字段不做环境变量展开
-- **WHEN** 配置文件中 URL 字段包含 `$` 字符
-- **THEN** 系统不对 URL 做环境变量展开

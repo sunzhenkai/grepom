@@ -189,10 +189,24 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// stripQuotes removes matching leading and trailing quotes (single or double) from s.
+// Only strips when the first and last characters form a matching pair.
+func stripQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '\'' && s[len(s)-1] == '\'') ||
+			(s[0] == '"' && s[len(s)-1] == '"') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
 // ResolveToken checks if the token is an environment variable placeholder (${VAR})
 // and resolves it to the actual value. Returns the original value if not a placeholder.
 // Returns an error if the placeholder references an unset environment variable.
+// Automatically strips matching leading/trailing quotes before matching.
 func ResolveToken(token string) (string, error) {
+	token = stripQuotes(token)
 	if token == "" {
 		return "", nil
 	}
@@ -208,6 +222,13 @@ func ResolveToken(token string) (string, error) {
 		return "", fmt.Errorf("token: environment variable %s is not set", envName)
 	}
 	return value, nil
+}
+
+// ResolvedToken returns the resolved token value for this resource.
+// It strips quotes and resolves ${ENV_VAR} placeholders.
+// Returns an error if a referenced environment variable is not set.
+func (r Resource) ResolvedToken() (string, error) {
+	return ResolveToken(r.Token)
 }
 
 // FindConfig locates the configuration file.

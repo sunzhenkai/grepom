@@ -1,17 +1,4 @@
-### Requirement: 配置加载时不解析 token 环境变量
-`config.Load()` SHALL 仅保存 token 字段的原始值（可能是 `${ENV_VAR}` 占位符或明文），不在加载阶段解析环境变量。加载 SHALL 不因环境变量未设置而失败。
-
-#### Scenario: 环境变量未设置时配置加载成功
-- **WHEN** 配置文件中 resource 的 token 为 `${GITLAB_TOKEN}`，但环境变量 `GITLAB_TOKEN` 未设置
-- **THEN** `config.Load()` 成功返回 Config 对象，token 字段保留 `${GITLAB_TOKEN}` 原始字符串
-
-#### Scenario: 多个 resource 部分环境变量未设置
-- **WHEN** 配置文件中有两个 resource，token 分别为 `${GITHUB_TOKEN}`（已设置）和 `${GITLAB_TOKEN}`（未设置）
-- **THEN** `config.Load()` 成功返回，两个 token 均保留原始占位符字符串
-
-#### Scenario: 禁用的 resource 环境变量未设置
-- **WHEN** 配置文件中某 resource 设置 `enabled: false`，token 为 `${UNSET_VAR}`
-- **THEN** `config.Load()` 成功返回，不解析该 token
+## MODIFIED Requirements
 
 ### Requirement: token 在实际使用时按需解析
 系统 SHALL 在实际需要 token 值时才解析 `${ENV_VAR}` 占位符。仅对当前操作涉及的、已启用的 resource/group/repo 的 token 进行解析。解析 SHALL 通过 `Resource.ResolvedToken()` 方法或 `config.ResolveToken()` 函数进行，不再直接使用 `Resource.Token` 字段作为 API 认证凭据。
@@ -37,14 +24,3 @@
 #### Scenario: pipeline 命令使用 ResolvedToken 获取 token
 - **WHEN** 用户运行 `grepom pipeline list web-app`，resource token 为 `${GITLAB_TOKEN}`，环境变量已设置
 - **THEN** pipeline 命令通过 `res.ResolvedToken()` 获取已解析的 token 值，正常调用 provider API
-
-### Requirement: add resource 命令仍立即验证 token
-`grepom add resource` 命令 SHALL 在添加 resource 时立即验证 token 的环境变量是否存在，如果未设置则报错。这是用户主动操作，需要立即反馈。
-
-#### Scenario: add resource 时环境变量未设置
-- **WHEN** 用户执行 `grepom add resource --name work-gl --token '${GITLAB_TOKEN}'`，`GITLAB_TOKEN` 未设置
-- **THEN** 命令报错，提示环境变量 `GITLAB_TOKEN` 未设置
-
-#### Scenario: add resource 时环境变量已设置
-- **WHEN** 用户执行 `grepom add resource --name work-gl --token '${GITLAB_TOKEN}'`，`GITLAB_TOKEN` 已设置
-- **THEN** resource 成功添加到配置文件

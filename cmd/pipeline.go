@@ -93,7 +93,12 @@ func resolvePipelineInput(cfg *config.Config, repoName string) (cicd.PipelinePro
 		return nil, "", "", "", err
 	}
 
-	return provider, res.APIURL(), remotePath, res.Token, nil
+	resolvedToken, err := res.ResolvedToken()
+	if err != nil {
+		return nil, "", "", "", fmt.Errorf("resource %q: %w", r.Resource, err)
+	}
+
+	return provider, res.APIURL(), remotePath, resolvedToken, nil
 }
 
 func runPipelineList(cmd *cobra.Command, args []string) error {

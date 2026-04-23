@@ -14,6 +14,7 @@ context: |
 rules:
   proposal:
     - 默认使用中文撰写 proposal；如需英文，必须由用户明确指定。
+    - 设计功能修改，记得同步 README 文档（多语言）
   design:
     - 默认使用中文撰写 design；如需英文，必须由用户明确指定。
   specs:

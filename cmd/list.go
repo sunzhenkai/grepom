@@ -311,9 +311,15 @@ func runListRemoteRepos(cfg *config.Config) error {
 			continue
 		}
 
+		resolvedToken, err := res.ResolvedToken()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: group %q (resource %q): %v\n", g.Name, g.Resource, err)
+			continue
+		}
+
 		params := provider.ListReposParams{
 			ServerURL:      res.APIURL(),
-			Token:          res.Token,
+			Token:          resolvedToken,
 			OrganizationID: res.OrganizationID,
 		}
 
@@ -423,9 +429,15 @@ func runListRemoteGroups(cfg *config.Config) error {
 			continue
 		}
 
+		resolvedToken, err := rq.res.ResolvedToken()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: resource %q: %v\n", rq.name, err)
+			continue
+		}
+
 		params := provider.ListGroupsParams{
 			ServerURL:      rq.res.APIURL(),
-			Token:          rq.res.Token,
+			Token:          resolvedToken,
 			OrganizationID: rq.res.OrganizationID,
 		}
 

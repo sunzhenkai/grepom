@@ -450,6 +450,149 @@ func TestResolveToken_UndefinedEnvVar(t *testing.T) {
 	}
 }
 
+func TestResolveToken_SingleQuotedEnvVar(t *testing.T) {
+	os.Setenv("MY_TOKEN", "secret-value")
+	defer os.Unsetenv("MY_TOKEN")
+
+	result, err := ResolveToken("'${MY_TOKEN}'")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "secret-value" {
+		t.Errorf("expected resolved value from single-quoted placeholder, got: %s", result)
+	}
+}
+
+func TestResolveToken_DoubleQuotedEnvVar(t *testing.T) {
+	os.Setenv("MY_TOKEN", "secret-value")
+	defer os.Unsetenv("MY_TOKEN")
+
+	result, err := ResolveToken("\"${MY_TOKEN}\"")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "secret-value" {
+		t.Errorf("expected resolved value from double-quoted placeholder, got: %s", result)
+	}
+}
+
+func TestResolveToken_QuotedPlainText(t *testing.T) {
+	result, err := ResolveToken("\"glpat-xxx\"")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "glpat-xxx" {
+		t.Errorf("expected quotes stripped from plain text, got: %s", result)
+	}
+}
+
+func TestResolveToken_MismatchedQuotes(t *testing.T) {
+	result, err := ResolveToken("'${MY_TOKEN}\"")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Mismatched quotes should not be stripped, so it's not a valid placeholder
+	if result != "'${MY_TOKEN}\"" {
+		t.Errorf("expected mismatched quotes preserved, got: %s", result)
+	}
+}
+
+// --- stripQuotes tests ---
+
+func TestStripQuotes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"'${GITLAB_TOKEN}'", "${GITLAB_TOKEN}"},
+		{"\"${GITLAB_TOKEN}\"", "${GITLAB_TOKEN}"},
+		{"'hello'", "hello"},
+		{"\"world\"", "world"},
+		{"${GITLAB_TOKEN}", "${GITLAB_TOKEN}"},
+		{"glpat-xxx", "glpat-xxx"},
+		{"", ""},
+		{"'", "'"},
+		{"\"\"", ""},
+		{"''", ""},
+		{"'mixed\"", "'mixed\""},
+		{"\"mixed'", "\"mixed'"},
+		{"a", "a"},
+		{"ab", "ab"},
+		{"'a", "'a"},
+		{"a'", "a'"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := stripQuotes(tt.input)
+			if result != tt.expected {
+				t.Errorf("stripQuotes(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// --- ResolvedToken tests ---
+
+func TestResolvedToken_EnvVar(t *testing.T) {
+	os.Setenv("RES_RESOLVE_TEST_TOKEN", "resolved-value")
+	defer os.Unsetenv("RES_RESOLVE_TEST_TOKEN")
+
+	res := Resource{Token: "${RES_RESOLVE_TEST_TOKEN}"}
+	token, err := res.ResolvedToken()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "resolved-value" {
+		t.Errorf("expected 'resolved-value', got: %s", token)
+	}
+}
+
+func TestResolvedToken_PlainText(t *testing.T) {
+	res := Resource{Token: "glpat-xxxxxxxxxxxx"}
+	token, err := res.ResolvedToken()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "glpat-xxxxxxxxxxxx" {
+		t.Errorf("expected 'glpat-xxxxxxxxxxxx', got: %s", token)
+	}
+}
+
+func TestResolvedToken_UndefinedEnvVar(t *testing.T) {
+	os.Unsetenv("RES_UNDEF_TOKEN")
+
+	res := Resource{Token: "${RES_UNDEF_TOKEN}"}
+	_, err := res.ResolvedToken()
+	if err == nil {
+		t.Fatal("expected error for undefined env var")
+	}
+}
+
+func TestResolvedToken_Empty(t *testing.T) {
+	res := Resource{Token: ""}
+	token, err := res.ResolvedToken()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "" {
+		t.Errorf("expected empty string, got: %s", token)
+	}
+}
+
+func TestResolvedToken_QuotedEnvVar(t *testing.T) {
+	os.Setenv("RES_QUOTED_TOKEN", "quoted-value")
+	defer os.Unsetenv("RES_QUOTED_TOKEN")
+
+	res := Resource{Token: "'${RES_QUOTED_TOKEN}'"}
+	token, err := res.ResolvedToken()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "quoted-value" {
+		t.Errorf("expected 'quoted-value', got: %s", token)
+	}
+}
+
 // --- Write config tests ---
 
 func TestWriteConfig_PreservesTokenPlaceholder(t *testing.T) {

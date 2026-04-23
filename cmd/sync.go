@@ -96,9 +96,15 @@ Only new repos are added to the config; existing entries are never removed.`,
 				groups = []provider.GroupQuery{{Path: g.Path, Recursive: g.Recursive}}
 			}
 
+			resolvedToken, err := res.ResolvedToken()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: group %q (resource %q): %v\n", g.Name, g.Resource, err)
+				continue
+			}
+
 			params := provider.ListReposParams{
 				ServerURL:      serverURL,
-				Token:          res.Token,
+				Token:          resolvedToken,
 				Groups:         groups,
 				Orgs:           orgs,
 				OrganizationID: res.OrganizationID,

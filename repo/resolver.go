@@ -47,9 +47,6 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 			// Determine token: group override > resource default
 			token := g.Token
 			hasGroupToken := g.Token != ""
-			if token == "" {
-				token = res.Token
-			}
 
 			// Determine SSHKey: group override > resource default
 			sshKey := g.SSHKey
@@ -63,12 +60,17 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 			groupDisabled := !g.IsEnabled()
 
 			// Lazily resolve token only when resource and group are both enabled
+			var resolved string
 			if !resourceDisabled && !groupDisabled {
-				resolved, err := config.ResolveToken(token)
+				var err error
+				if hasGroupToken {
+					resolved, err = config.ResolveToken(token)
+				} else {
+					resolved, err = res.ResolvedToken()
+				}
 				if err != nil {
 					return nil, fmt.Errorf("group %q (resource %q): %w", g.Name, g.Resource, err)
 				}
-				token = resolved
 			}
 
 			for _, gr := range g.Repos {
@@ -82,7 +84,7 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 					Provider:       res.Provider,
 					Resource:       g.Resource,
 					GroupName:      g.Name,
-					Token:          token,
+					Token:          resolved,
 					SSHKey:         sshKey,
 					HasGroupToken:  hasGroupToken,
 					HasGroupSSHKey: hasGroupSSHKey,
@@ -135,10 +137,7 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 
 			// Determine token: repo override > resource default
 			token := repo.Token
-			hasGroupToken := repo.Token != ""
-			if token == "" {
-				token = res.Token
-			}
+			hasRepoToken := repo.Token != ""
 
 			// Determine SSHKey: repo override > resource default
 			sshKey := repo.SSHKey
@@ -152,12 +151,17 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 			repoDisabled := !repo.IsEnabled()
 
 			// Lazily resolve token only when resource and repo are both enabled
+			var resolved string
 			if !resourceDisabled && !repoDisabled {
-				resolved, err := config.ResolveToken(token)
+				var err error
+				if hasRepoToken {
+					resolved, err = config.ResolveToken(token)
+				} else {
+					resolved, err = res.ResolvedToken()
+				}
 				if err != nil {
 					return nil, fmt.Errorf("repo %q (resource %q): %w", repo.Name, repo.Resource, err)
 				}
-				token = resolved
 			}
 
 			repoPath := ExtractRemotePath(repo.URL)
@@ -169,9 +173,9 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 				Path:           localPath,
 				Provider:       res.Provider,
 				Resource:       repo.Resource,
-				Token:          token,
+				Token:          resolved,
 				SSHKey:         sshKey,
-				HasGroupToken:  hasGroupToken,
+				HasGroupToken:  hasRepoToken,
 				HasGroupSSHKey: hasGroupSSHKey,
 			}
 
