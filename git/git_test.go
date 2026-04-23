@@ -262,7 +262,7 @@ func TestBuildAuthStrategies_ResourceSSHPriorityOverToken(t *testing.T) {
 		t.Errorf("expected first strategy to be resource SSH key, got: %s", strategies[0].label)
 	}
 	// Second should be default SSH
-	if !strings.Contains(strategies[1].label, "默认") {
+	if !strings.Contains(strategies[1].label, "default") {
 		t.Errorf("expected second strategy to be default SSH, got: %s", strategies[1].label)
 	}
 	// Third should be resource token
@@ -292,7 +292,7 @@ func TestBuildAuthStrategies_GroupRepoAuthBeforeResource(t *testing.T) {
 		t.Errorf("expected first strategy to be group/repo SSH key, got: %s", strategies[0].label)
 	}
 	// Second should be default SSH
-	if !strings.Contains(strategies[1].label, "默认") {
+	if !strings.Contains(strategies[1].label, "default") {
 		t.Errorf("expected second strategy to be default SSH, got: %s", strategies[1].label)
 	}
 	// Third should be resource token
@@ -308,7 +308,7 @@ func TestBuildAuthStrategies_NoAuth(t *testing.T) {
 	if len(strategies) != 1 {
 		t.Fatalf("expected 1 strategy (default SSH only), got %d", len(strategies))
 	}
-	if !strings.Contains(strategies[0].label, "SSH 认证 (默认)") {
+	if !strings.Contains(strategies[0].label, "SSH auth (default)") {
 		t.Errorf("expected first to be default SSH, got: %s", strategies[0].label)
 	}
 }
@@ -326,7 +326,7 @@ func TestBuildAuthStrategies_OnlyToken(t *testing.T) {
 		t.Fatalf("expected 2 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
 	}
 	// First should be default SSH (resource SSH skipped because no SSH key)
-	if !strings.Contains(strategies[0].label, "默认") {
+	if !strings.Contains(strategies[0].label, "default") {
 		t.Errorf("expected first to be default SSH, got: %s", strategies[0].label)
 	}
 	// Second should be resource token
@@ -382,7 +382,7 @@ func TestBuildAuthStrategies_Full5LevelChain(t *testing.T) {
 	if !strings.Contains(strategies[1].label, "group/repo") || !strings.Contains(strategies[1].label, "token") {
 		t.Errorf("strategy 1: expected group/repo token, got: %s", strategies[1].label)
 	}
-	if !strings.Contains(strategies[2].label, "默认") {
+	if !strings.Contains(strategies[2].label, "default") {
 		t.Errorf("strategy 2: expected default SSH, got: %s", strategies[2].label)
 	}
 }
@@ -407,7 +407,7 @@ func TestBuildAuthStrategies_GroupSSH_ResourceTokenOnly(t *testing.T) {
 	if !strings.Contains(strategies[0].label, "SSH key") || !strings.Contains(strategies[0].label, "group/repo") {
 		t.Errorf("strategy 0: expected group/repo SSH key, got: %s", strategies[0].label)
 	}
-	if !strings.Contains(strategies[1].label, "默认") {
+	if !strings.Contains(strategies[1].label, "default") {
 		t.Errorf("strategy 1: expected default SSH, got: %s", strategies[1].label)
 	}
 	if !strings.Contains(strategies[2].label, "token") || !strings.Contains(strategies[2].label, "resource") {
@@ -438,7 +438,7 @@ func TestBuildAuthStrategies_GroupToken_ResourceSSHAndToken(t *testing.T) {
 	if !strings.Contains(strategies[1].label, "SSH key") || !strings.Contains(strategies[1].label, "resource") {
 		t.Errorf("strategy 1: expected resource SSH key, got: %s", strategies[1].label)
 	}
-	if !strings.Contains(strategies[2].label, "默认") {
+	if !strings.Contains(strategies[2].label, "default") {
 		t.Errorf("strategy 2: expected default SSH, got: %s", strategies[2].label)
 	}
 }
@@ -455,7 +455,7 @@ func TestBuildAuthStrategies_DefaultSSHPriorToResourceToken(t *testing.T) {
 	if len(strategies) != 2 {
 		t.Fatalf("expected 2 strategies, got %d: %v", len(strategies), strategyLabels(strategies))
 	}
-	if !strings.Contains(strategies[0].label, "默认") {
+	if !strings.Contains(strategies[0].label, "default") {
 		t.Errorf("strategy 0: expected default SSH, got: %s", strategies[0].label)
 	}
 	if !strings.Contains(strategies[1].label, "token") || !strings.Contains(strategies[1].label, "resource") {

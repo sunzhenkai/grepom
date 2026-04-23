@@ -26,30 +26,30 @@ var (
 
 var scanCmd = &cobra.Command{
 	Use:   "scan [name]",
-	Short: "扫描仓库中的敏感信息",
-	Long: `使用 gitleaks 规则引擎扫描已克隆仓库中的敏感信息（SSH 私钥、API Token、密码、AK/SK 等）。
+	Short: "Scan repositories for sensitive information",
+	Long: `Scan cloned repositories for sensitive information (SSH private keys, API tokens, passwords, AK/SK, etc.) using the gitleaks rules engine.
 
-默认扫描工作区文件。使用 --history 扫描 git 历史（包括已删除提交中的泄露）。
-支持 --group 和 --resource 过滤扫描范围。`,
-	Example: `  grepom scan                           # 扫描所有已克隆仓库的工作区
-  grepom scan --group frontend          # 仅扫描 frontend 组
-  grepom scan --resource work-gl        # 仅扫描 work-gl 资源下的仓库
-  grepom scan web-app                   # 仅扫描 web-app 仓库
-  grepom scan --history                 # 扫描工作区 + git 历史
-  grepom scan --format json             # JSON 格式输出
-  grepom scan --output results.txt      # 输出到文件
-  grepom scan --gitleaks-config rules.toml  # 使用自定义规则`,
+By default, scans workspace files. Use --history to scan git history (including deleted commits).
+Supports --group and --resource flags to filter scan scope.`,
+	Example: `  grepom scan                           # Scan workspace files of all cloned repos
+  grepom scan --group frontend          # Scan only the frontend group
+  grepom scan --resource work-gl        # Scan only repos under the work-gl resource
+  grepom scan web-app                   # Scan only the web-app repo
+  grepom scan --history                 # Scan workspace + git history
+  grepom scan --format json             # Output in JSON format
+  grepom scan --output results.txt      # Output results to file
+  grepom scan --gitleaks-config rules.toml  # Use custom rules`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runScan,
 }
 
 func init() {
-	scanCmd.Flags().StringVarP(&scanGroup, "group", "g", "", "按组名过滤")
-	scanCmd.Flags().StringVarP(&scanResource, "resource", "R", "", "按资源名过滤")
-	scanCmd.Flags().BoolVar(&scanHistory, "history", false, "扫描 git 历史（包括已删除提交中的泄露）")
-	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "table", "输出格式: table, json")
-	scanCmd.Flags().StringVar(&scanGitleaksCfg, "gitleaks-config", "", "自定义 gitleaks.toml 配置文件路径")
-	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "将扫描结果输出到指定文件")
+	scanCmd.Flags().StringVarP(&scanGroup, "group", "g", "", "filter by group name")
+	scanCmd.Flags().StringVarP(&scanResource, "resource", "R", "", "filter by resource name")
+	scanCmd.Flags().BoolVar(&scanHistory, "history", false, "scan git history (including deleted commits)")
+	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "table", "output format: table, json")
+	scanCmd.Flags().StringVar(&scanGitleaksCfg, "gitleaks-config", "", "path to custom gitleaks.toml config file")
+	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "write scan results to file")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -169,7 +169,7 @@ func runScanCurrentDir() error {
 	ctx := context.Background()
 	findings, err := s.ScanDir(ctx, ".")
 	if err != nil {
-		return fmt.Errorf("扫描当前目录失败: %w", err)
+		return fmt.Errorf("failed to scan current directory: %w", err)
 	}
 
 	// 设置 repo 名称为当前目录
@@ -187,7 +187,7 @@ func outputFindings(findings []scanner.Finding) error {
 	if scanOutput != "" {
 		f, err := os.Create(scanOutput)
 		if err != nil {
-			return fmt.Errorf("无法创建输出文件 %q: %w", scanOutput, err)
+			return fmt.Errorf("failed to create output file %q: %w", scanOutput, err)
 		}
 		defer f.Close()
 		w = f
@@ -259,7 +259,7 @@ func outputTable(w io.Writer, findings []scanner.Finding) error {
 func outputJSON(w io.Writer, findings []scanner.Finding) error {
 	data, err := scanner.FindingsToJSON(findings)
 	if err != nil {
-		return fmt.Errorf("JSON 序列化失败: %w", err)
+		return fmt.Errorf("JSON serialization failed: %w", err)
 	}
 	fmt.Fprintln(w, string(data))
 	return nil

@@ -58,7 +58,7 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 	// 1. group/repo SSH key (highest priority)
 	if opts.HasGroupSSHKey && opts.SSHKey != "" && sshURL != "" {
 		strategies = append(strategies, authStrategy{
-			label:  "SSH key 认证 (group/repo)",
+			label:  "SSH key auth (group/repo)",
 			url:    sshURL,
 			sshKey: opts.SSHKey,
 		})
@@ -68,7 +68,7 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 	if opts.HasGroupToken && opts.Token != "" && httpURL != "" {
 		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
 		strategies = append(strategies, authStrategy{
-			label:  "token 认证 (group/repo)",
+			label:  "token auth (group/repo)",
 			url:    tokenURL,
 			sshKey: "",
 		})
@@ -77,7 +77,7 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 	// 3. resource SSH key
 	if !opts.HasGroupSSHKey && opts.SSHKey != "" && sshURL != "" {
 		strategies = append(strategies, authStrategy{
-			label:  "SSH key 认证 (resource)",
+			label:  "SSH key auth (resource)",
 			url:    sshURL,
 			sshKey: opts.SSHKey,
 		})
@@ -86,7 +86,7 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 	// 4. Default SSH (derived URL, uses system SSH agent/config)
 	if sshURL != "" {
 		strategies = append(strategies, authStrategy{
-			label:  "SSH 认证 (默认)",
+			label:  "SSH auth (default)",
 			url:    sshURL,
 			sshKey: "",
 		})
@@ -96,7 +96,7 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 	if !opts.HasGroupToken && opts.Token != "" && httpURL != "" {
 		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
 		strategies = append(strategies, authStrategy{
-			label:  "token 认证 (resource)",
+			label:  "token auth (resource)",
 			url:    tokenURL,
 			sshKey: "",
 		})
@@ -123,24 +123,24 @@ func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 	total := len(strategies)
 	for i, s := range strategies {
 		displayURL := maskTokenURL(s.url)
-		logf(w, "  [%d/%d] 尝试 %s... %s\n", i+1, total, s.label, displayURL)
+		logf(w, "  [%d/%d] trying %s... %s\n", i+1, total, s.label, displayURL)
 
 		err := tryClone(path, s.url, s.sshKey)
 		if err == nil {
-			logf(w, "  [%d/%d] 成功\n", i+1, total)
+			logf(w, "  [%d/%d] ok\n", i+1, total)
 			return nil
 		}
 
 		// Sanitize error message (remove any embedded token/URL)
 		errMsg := sanitizeError(err.Error())
-		logf(w, "  [%d/%d] 失败: %s\n", i+1, total, errMsg)
+		logf(w, "  [%d/%d] failed: %s\n", i+1, total, errMsg)
 
 		// Clean up failed attempt
 		os.RemoveAll(path)
 		os.MkdirAll(filepath.Dir(path), 0755)
 	}
 
-	return fmt.Errorf("所有认证方式均失败")
+	return fmt.Errorf("all authentication methods failed")
 }
 
 // logf writes to w if non-nil, otherwise to stdout via fmt.Printf.
@@ -270,7 +270,7 @@ func GetDefaultBranch(path string) (string, error) {
 	cmd := exec.Command("git", "-C", path, "symbolic-ref", "refs/remotes/origin/HEAD")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("无法检测默认分支: %w", err)
+		return "", fmt.Errorf("failed to detect default branch: %w", err)
 	}
 
 	// Output is like "refs/remotes/origin/main\n", extract "main"

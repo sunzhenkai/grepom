@@ -17,29 +17,30 @@ var (
 
 var pushCmd = &cobra.Command{
 	Use:   "push [--] [git-push-args...]",
-	Short: "推送前自动扫描敏感信息",
-	Long: `在执行 git push 前自动扫描当前目录的敏感信息。
-如果发现敏感信息，默认拒绝推送。使用 -f/--force 可以强制推送，但会打印警告。
+	Short: "Scan for secrets before pushing",
+	Long: `Automatically scan the current directory for sensitive information before executing git push.
 
-该命令不依赖 grepom 配置文件，可在任何 git 仓库中使用。
-使用 -- 将后续参数透传给 git push。`,
-	Example: `  grepom push                        # 扫描后推送（无敏感信息时）
-  grepom push -f                     # 发现敏感信息仍强制推送（打印警告）
-  grepom push -- origin main         # 透传参数给 git push
-  grepom push --gitleaks-config ./rules.toml  # 使用自定义扫描规则`,
+If secrets are found, push is rejected by default. Use -f/--force to force push (with warning).
+
+This command does not depend on grepom config files and can be used in any git repository.
+Use -- to pass remaining arguments through to git push.`,
+	Example: `  grepom push                        # Scan and push (if no secrets found)
+  grepom push -f                     # Force push even if secrets found (prints warning)
+  grepom push -- origin main         # Pass arguments through to git push
+  grepom push --gitleaks-config ./rules.toml  # Use custom scan rules`,
 	RunE: runPush,
 }
 
 func init() {
-	pushCmd.Flags().BoolVarP(&pushForce, "force", "f", false, "发现敏感信息时强制推送（仍打印警告）")
-	pushCmd.Flags().StringVar(&pushGitleaksCfg, "gitleaks-config", "", "自定义 gitleaks.toml 配置文件路径")
+	pushCmd.Flags().BoolVarP(&pushForce, "force", "f", false, "force push even when secrets are found (still prints warning)")
+	pushCmd.Flags().StringVar(&pushGitleaksCfg, "gitleaks-config", "", "path to custom gitleaks.toml config file")
 	rootCmd.AddCommand(pushCmd)
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
 	// 检测当前目录是否为 git 仓库
 	if !gitpkg.IsCloned(".") {
-		return fmt.Errorf("当前目录不是 git 仓库")
+		return fmt.Errorf("current directory is not a git repository")
 	}
 
 	// 收集透传给 git push 的参数（跳过 cobra 已解析的标志）
@@ -53,7 +54,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	findings, err := s.ScanDir(ctx, ".")
 	if err != nil {
-		return fmt.Errorf("扫描失败: %w", err)
+		return fmt.Errorf("scan failed: %w", err)
 	}
 
 	// 有发现项时处理

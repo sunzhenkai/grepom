@@ -22,7 +22,7 @@ var interactiveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// TTY check
 		if !isTerminal() {
-			return fmt.Errorf("interactive 模式需要交互式终端")
+			return fmt.Errorf("interactive mode requires a TTY")
 		}
 
 		mainMenu()
@@ -48,47 +48,47 @@ func mainMenu() {
 	for {
 		choice := ""
 		prompt := &survey.Select{
-			Message: "请选择操作:",
+			Message: "Select an action:",
 			Options: []string{
-				"初始化配置 (init)",
-				"添加资源 (add resource)",
-				"添加组 (add group)",
-				"添加仓库 (add repo)",
-				"同步远程仓库 (sync)",
-				"克隆仓库 (clone)",
-				"拉取更新 (pull)",
-				"查看状态 (status)",
-				"退出",
+				"Initialize config (init)",
+				"Add resource",
+				"Add group",
+				"Add repo",
+				"Sync remote repos",
+				"Clone repos",
+				"Pull updates",
+				"Check status",
+				"Exit",
 			},
 		}
 		if err := survey.AskOne(prompt, &choice); err != nil {
 			if err == terminal.InterruptErr {
-				fmt.Println("\n再见!")
+				fmt.Println("\nBye!")
 				return
 			}
-			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			return
 		}
 
 		switch choice {
-		case "初始化配置 (init)":
+		case "Initialize config (init)":
 			interactiveInit()
-		case "添加资源 (add resource)":
+		case "Add resource":
 			interactiveAddResource()
-		case "添加组 (add group)":
+		case "Add group":
 			interactiveAddGroup()
-		case "添加仓库 (add repo)":
+		case "Add repo":
 			interactiveAddRepo()
-		case "同步远程仓库 (sync)":
+		case "Sync remote repos":
 			interactiveSync()
-		case "克隆仓库 (clone)":
+		case "Clone repos":
 			interactiveClone()
-		case "拉取更新 (pull)":
+		case "Pull updates":
 			interactivePull()
-		case "查看状态 (status)":
+		case "Check status":
 			interactiveStatus()
-		case "退出":
-			fmt.Println("再见!")
+		case "Exit":
+			fmt.Println("Bye!")
 			return
 		}
 
@@ -111,13 +111,13 @@ func interactiveInit() {
 
 	// Config file path
 	survey.AskOne(&survey.Input{
-		Message: "配置文件路径:",
+		Message: "Config file path:",
 		Default: ".grepom.yml",
 	}, &answers.ConfigPath)
 
 	// Base directory
 	survey.AskOne(&survey.Input{
-		Message: "base 目录:",
+		Message: "Base directory:",
 		Default: "~/projects",
 	}, &answers.Base)
 
@@ -129,14 +129,14 @@ func interactiveInit() {
 
 	// Create config
 	if err := config.InitConfig(path, answers.Base); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	fmt.Printf("创建配置文件: %s\n", path)
+	fmt.Printf("Config file created: %s\n", path)
 
 	// Ask if user wants to add a resource
 	survey.AskOne(&survey.Confirm{
-		Message: "是否添加第一个资源?",
+		Message: "Add first resource?",
 		Default: true,
 	}, &answers.AddRes)
 
@@ -146,7 +146,7 @@ func interactiveInit() {
 
 	// Provider selection
 	survey.AskOne(&survey.Select{
-		Message: "Provider 类型:",
+		Message: "Provider type:",
 		Options: []string{"gitlab", "github", "generic"},
 	}, &answers.Provider)
 
@@ -165,12 +165,12 @@ func interactiveInit() {
 
 	// Token
 	survey.AskOne(&survey.Input{
-		Message: "Token (支持 ${ENV_VAR} 语法):",
+		Message: "Token (supports ${ENV_VAR} syntax):",
 	}, &answers.Token)
 
 	// SSH key (optional)
 	survey.AskOne(&survey.Input{
-		Message: "SSH key 路径 (可选，留空跳过):",
+		Message: "SSH key path (optional, leave empty to skip):",
 		Default: "",
 	}, &answers.SSHKey)
 
@@ -183,10 +183,10 @@ func interactiveInit() {
 		SSHKey:   answers.SSHKey,
 	}
 	if err := config.AddResource(path, name, res); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	fmt.Printf("添加资源 %s 到 %s\n", name, path)
+	fmt.Printf("Added resource %s to %s\n", name, path)
 }
 
 // --- Interactive add resource (task 8.2) ---
@@ -202,15 +202,15 @@ func interactiveAddResource() {
 	}{}
 
 	survey.AskOne(&survey.Input{
-		Message: "资源名称:",
+		Message: "Resource name:",
 	}, &answers.Name)
 	if answers.Name == "" {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
 	survey.AskOne(&survey.Select{
-		Message: "Provider 类型:",
+		Message: "Provider type:",
 		Options: []string{"gitlab", "github", "generic"},
 	}, &answers.Provider)
 
@@ -227,23 +227,23 @@ func interactiveAddResource() {
 	}, &answers.URL)
 
 	survey.AskOne(&survey.Input{
-		Message: "Token (支持 ${ENV_VAR} 语法):",
+		Message: "Token (supports ${ENV_VAR} syntax):",
 	}, &answers.Token)
 
 	survey.AskOne(&survey.Input{
-		Message: "SSH key 路径 (可选，留空跳过):",
+		Message: "SSH key path (optional, leave empty to skip):",
 	}, &answers.SSHKey)
 
 	// Confirmation
-	fmt.Printf("\n资源: %s\n  provider: %s\n  url: %s\n  token: %s\n  ssh_key: %s\n",
+	fmt.Printf("\nResource: %s\n  provider: %s\n  url: %s\n  token: %s\n  ssh_key: %s\n",
 		answers.Name, answers.Provider, answers.URL, maskToken(answers.Token), answers.SSHKey)
 	survey.AskOne(&survey.Confirm{
-		Message: "确认添加?",
+		Message: "Confirm add?",
 		Default: true,
 	}, &answers.Confirm)
 
 	if !answers.Confirm {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
@@ -259,10 +259,10 @@ func interactiveAddResource() {
 		SSHKey:   answers.SSHKey,
 	}
 	if err := config.AddResource(path, answers.Name, res); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	fmt.Printf("添加资源 %s 到 %s\n", answers.Name, path)
+	fmt.Printf("Added resource %s to %s\n", answers.Name, path)
 }
 
 // --- Interactive add group (task 8.3) ---
@@ -276,12 +276,12 @@ func interactiveAddGroup() {
 
 	cfg, err := config.Load(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "无法加载配置: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		return
 	}
 
 	if len(cfg.Resources) == 0 {
-		fmt.Println("请先添加资源")
+		fmt.Println("No resources configured. Please add a resource first.")
 		return
 	}
 
@@ -303,24 +303,24 @@ func interactiveAddGroup() {
 	}{}
 
 	survey.AskOne(&survey.Input{
-		Message: "组名称:",
+		Message: "Group name:",
 	}, &answers.Name)
 	if answers.Name == "" {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
 	survey.AskOne(&survey.Select{
-		Message: "关联资源:",
+		Message: "Linked resource:",
 		Options: resourceNames,
 	}, &answers.Resource)
 
 	survey.AskOne(&survey.Input{
-		Message: "远程路径 (如 my-org/frontend):",
+		Message: "Remote path (e.g. my-org/frontend):",
 	}, &answers.Path)
 
 	survey.AskOne(&survey.Input{
-		Message: "本地路径:",
+		Message: "Local path:",
 		Default: "./" + answers.Name,
 	}, &answers.LocalPath)
 
@@ -328,23 +328,23 @@ func interactiveAddGroup() {
 	res := cfg.Resources[answers.Resource]
 	if res.Provider == "gitlab" {
 		survey.AskOne(&survey.Confirm{
-			Message: "是否递归 (recursive)?",
+			Message: "Recursive?",
 			Default: false,
 		}, &answers.Recursive)
 	}
 
 	// Optional SSH key
 	survey.AskOne(&survey.Input{
-		Message: "SSH key 路径 (可选，覆盖资源默认，留空跳过):",
+		Message: "SSH key path (optional, overrides resource default, leave empty to skip):",
 	}, &answers.SSHKey)
 
 	// Optional token
 	survey.AskOne(&survey.Input{
-		Message: "Token (可选，覆盖资源默认，支持 ${ENV_VAR}，留空跳过):",
+		Message: "Token (optional, overrides resource default, supports ${ENV_VAR}, leave empty to skip):",
 	}, &answers.Token)
 
 	// Confirmation
-	fmt.Printf("\n组: %s\n  resource: %s\n  path: %s\n  local: %s\n  recursive: %v\n",
+	fmt.Printf("\nGroup: %s\n  resource: %s\n  path: %s\n  local: %s\n  recursive: %v\n",
 		answers.Name, answers.Resource, answers.Path, answers.LocalPath, answers.Recursive)
 	if answers.SSHKey != "" {
 		fmt.Printf("  ssh_key: %s\n", answers.SSHKey)
@@ -353,12 +353,12 @@ func interactiveAddGroup() {
 		fmt.Printf("  token: %s\n", maskToken(answers.Token))
 	}
 	survey.AskOne(&survey.Confirm{
-		Message: "确认添加?",
+		Message: "Confirm add?",
 		Default: true,
 	}, &answers.Confirm)
 
 	if !answers.Confirm {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
@@ -372,10 +372,10 @@ func interactiveAddGroup() {
 		Token:     answers.Token,
 	}
 	if err := config.AddGroup(path, group); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	fmt.Printf("添加组 %s 到 %s\n", answers.Name, path)
+	fmt.Printf("Added group %s to %s\n", answers.Name, path)
 }
 
 // --- Interactive add repo (task 8.4) ---
@@ -384,14 +384,14 @@ func interactiveAddRepo() {
 	// First ask: standalone or group repo
 	repoType := ""
 	survey.AskOne(&survey.Select{
-		Message: "添加仓库类型:",
-		Options: []string{"独立仓库", "添加到组"},
+		Message: "Repo type:",
+		Options: []string{"Standalone repo", "Add to group"},
 	}, &repoType)
 
 	switch repoType {
-	case "独立仓库":
+	case "Standalone repo":
 		interactiveAddStandaloneRepo()
-	case "添加到组":
+	case "Add to group":
 		interactiveAddGroupRepo()
 	}
 }
@@ -404,12 +404,12 @@ func interactiveAddStandaloneRepo() {
 
 	cfg, err := config.Load(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "无法加载配置: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		return
 	}
 
 	if len(cfg.Resources) == 0 {
-		fmt.Println("请先添加资源")
+		fmt.Println("No resources configured. Please add a resource first.")
 		return
 	}
 
@@ -429,15 +429,15 @@ func interactiveAddStandaloneRepo() {
 	}{}
 
 	survey.AskOne(&survey.Input{
-		Message: "仓库名称:",
+		Message: "Repo name:",
 	}, &answers.Name)
 	if answers.Name == "" {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
 	survey.AskOne(&survey.Select{
-		Message: "关联资源:",
+		Message: "Linked resource:",
 		Options: resourceNames,
 	}, &answers.Resource)
 
@@ -445,27 +445,27 @@ func interactiveAddStandaloneRepo() {
 		Message: "Clone URL:",
 	}, &answers.URL)
 	if answers.URL == "" {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
 	survey.AskOne(&survey.Input{
-		Message: "本地路径:",
+		Message: "Local path:",
 		Default: "./" + answers.Name,
 	}, &answers.LocalPath)
 
 	// Optional SSH key
 	survey.AskOne(&survey.Input{
-		Message: "SSH key 路径 (可选，覆盖资源默认，留空跳过):",
+		Message: "SSH key path (optional, overrides resource default, leave empty to skip):",
 	}, &answers.SSHKey)
 
 	// Optional token
 	survey.AskOne(&survey.Input{
-		Message: "Token (可选，覆盖资源默认，支持 ${ENV_VAR}，留空跳过):",
+		Message: "Token (optional, overrides resource default, supports ${ENV_VAR}, leave empty to skip):",
 	}, &answers.Token)
 
 	// Confirmation
-	fmt.Printf("\n仓库: %s\n  resource: %s\n  url: %s\n  local: %s\n",
+	fmt.Printf("\nRepo: %s\n  resource: %s\n  url: %s\n  local: %s\n",
 		answers.Name, answers.Resource, answers.URL, answers.LocalPath)
 	if answers.SSHKey != "" {
 		fmt.Printf("  ssh_key: %s\n", answers.SSHKey)
@@ -474,12 +474,12 @@ func interactiveAddStandaloneRepo() {
 		fmt.Printf("  token: %s\n", maskToken(answers.Token))
 	}
 	survey.AskOne(&survey.Confirm{
-		Message: "确认添加?",
+		Message: "Confirm add?",
 		Default: true,
 	}, &answers.Confirm)
 
 	if !answers.Confirm {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
@@ -492,10 +492,10 @@ func interactiveAddStandaloneRepo() {
 		Token:     answers.Token,
 	}
 	if err := config.AddRepo(path, repo); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	fmt.Printf("添加仓库 %s 到 %s\n", answers.Name, path)
+	fmt.Printf("Added repo %s to %s\n", answers.Name, path)
 }
 
 func interactiveAddGroupRepo() {
@@ -506,12 +506,12 @@ func interactiveAddGroupRepo() {
 
 	cfg, err := config.Load(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "无法加载配置: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		return
 	}
 
 	if len(cfg.Groups) == 0 {
-		fmt.Println("请先添加组")
+		fmt.Println("No groups configured. Please add a group first.")
 		return
 	}
 
@@ -529,15 +529,15 @@ func interactiveAddGroupRepo() {
 	}{}
 
 	survey.AskOne(&survey.Select{
-		Message: "目标组:",
+		Message: "Target group:",
 		Options: groupNames,
 	}, &answers.Group)
 
 	survey.AskOne(&survey.Input{
-		Message: "仓库名称:",
+		Message: "Repo name:",
 	}, &answers.Name)
 	if answers.Name == "" {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
@@ -545,24 +545,24 @@ func interactiveAddGroupRepo() {
 		Message: "Clone URL:",
 	}, &answers.URL)
 	if answers.URL == "" {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
 	survey.AskOne(&survey.Input{
-		Message: "远程路径 (组内路径，如 my-org/frontend/repo-name):",
+		Message: "Remote path (in-group path, e.g. my-org/frontend/repo-name):",
 	}, &answers.Path)
 
 	// Confirmation
-	fmt.Printf("\n组内仓库: %s → %s\n  url: %s\n  path: %s\n",
+	fmt.Printf("\nRepo in group: %s -> %s\n  url: %s\n  path: %s\n",
 		answers.Name, answers.Group, answers.URL, answers.Path)
 	survey.AskOne(&survey.Confirm{
-		Message: "确认添加?",
+		Message: "Confirm add?",
 		Default: true,
 	}, &answers.Confirm)
 
 	if !answers.Confirm {
-		fmt.Println("已取消")
+		fmt.Println("Cancelled")
 		return
 	}
 
@@ -575,10 +575,10 @@ func interactiveAddGroupRepo() {
 		repo.Path = answers.Name
 	}
 	if err := config.AddGroupRepo(path, answers.Group, repo); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	fmt.Printf("添加仓库 %s 到组 %s\n", answers.Name, answers.Group)
+	fmt.Printf("Added repo %s to group %s\n", answers.Name, answers.Group)
 }
 
 // --- Interactive sync (task 8.5) ---
@@ -586,7 +586,7 @@ func interactiveAddGroupRepo() {
 func interactiveSync() {
 	cfg, err := loadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
@@ -597,20 +597,20 @@ func interactiveSync() {
 
 	// Determine scope
 	scope := ""
-	scopeOptions := []string{"全部", "按组", "按资源"}
+	scopeOptions := []string{"All", "By group", "By resource"}
 	survey.AskOne(&survey.Select{
-		Message: "同步范围:",
+		Message: "Sync scope:",
 		Options: scopeOptions,
 	}, &scope)
 
 	var groupsToProcess []config.Group
 
 	switch scope {
-	case "全部":
+	case "All":
 		groupsToProcess = cfg.Groups
-	case "按组":
+	case "By group":
 		if len(cfg.Groups) == 0 {
-			fmt.Println("没有配置组")
+			fmt.Println("No groups configured")
 			return
 		}
 		var groupNames []string
@@ -619,7 +619,7 @@ func interactiveSync() {
 		}
 		selectedGroup := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择组:",
+			Message: "Select group:",
 			Options: groupNames,
 		}, &selectedGroup)
 		for _, g := range cfg.Groups {
@@ -627,9 +627,9 @@ func interactiveSync() {
 				groupsToProcess = append(groupsToProcess, g)
 			}
 		}
-	case "按资源":
+	case "By resource":
 		if len(cfg.Resources) == 0 {
-			fmt.Println("没有配置资源")
+			fmt.Println("No resources configured")
 			return
 		}
 		var resourceNames []string
@@ -638,7 +638,7 @@ func interactiveSync() {
 		}
 		selectedResource := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择资源:",
+			Message: "Select resource:",
 			Options: resourceNames,
 		}, &selectedResource)
 		for _, g := range cfg.Groups {
@@ -649,7 +649,7 @@ func interactiveSync() {
 	}
 
 	if len(groupsToProcess) == 0 {
-		fmt.Println("没有需要同步的组")
+		fmt.Println("No groups to sync")
 		return
 	}
 
@@ -658,17 +658,17 @@ func interactiveSync() {
 	for _, g := range groupsToProcess {
 		res, ok := cfg.Resources[g.Resource]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "错误: 组 %q: 资源 %q 未找到\n", g.Name, g.Resource)
+			fmt.Fprintf(os.Stderr, "error: group %q: resource %q not found\n", g.Name, g.Resource)
 			continue
 		}
 
 		p, err := provider.Get(res.Provider)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "错误: 组 %q: %v\n", g.Name, err)
+			fmt.Fprintf(os.Stderr, "error: group %q: %v\n", g.Name, err)
 			continue
 		}
 
-		config.Verbose("同步组 %q (资源: %s, 路径: %s)", g.Name, g.Resource, g.Path)
+		config.Verbose("syncing group %q (resource: %s, path: %s)", g.Name, g.Resource, g.Path)
 
 		params := provider.ListReposParams{
 			ServerURL: res.URL,
@@ -683,12 +683,12 @@ func interactiveSync() {
 
 		repos, err := p.ListRepos(context.Background(), params)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "错误: 组 %q: %v\n", g.Name, err)
+			fmt.Fprintf(os.Stderr, "error: group %q: %v\n", g.Name, err)
 			continue
 		}
 
 		totalRepos += len(repos)
-		fmt.Printf("组 %q: 发现 %d 个仓库\n", g.Name, len(repos))
+		fmt.Printf("group %q: found %d repos\n", g.Name, len(repos))
 
 		var newGroupRepos []config.GroupRepo
 		for _, r := range repos {
@@ -702,15 +702,15 @@ func interactiveSync() {
 		if len(newGroupRepos) > 0 {
 			added, err := config.SyncGroupRepos(configPath, g.Name, newGroupRepos)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "错误: 组 %q: %v\n", g.Name, err)
+				fmt.Fprintf(os.Stderr, "error: group %q: %v\n", g.Name, err)
 			} else if added > 0 {
 				totalNewRepos += added
-				fmt.Printf("  添加 %d 个新仓库到组 %q\n", added, g.Name)
+				fmt.Printf("  added %d new repos to group %q\n", added, g.Name)
 			}
 		}
 	}
 
-	fmt.Printf("\n同步完成: 发现 %d 个仓库, 新增 %d 个\n", totalRepos, totalNewRepos)
+	fmt.Printf("\nSync complete: %d repos discovered, %d new\n", totalRepos, totalNewRepos)
 }
 
 // --- Interactive clone (task 8.6) ---
@@ -718,24 +718,24 @@ func interactiveSync() {
 func interactiveClone() {
 	cfg, err := loadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
 	// Determine scope
 	scope := ""
-	scopeOptions := []string{"全部", "按组", "按资源"}
+	scopeOptions := []string{"All", "By group", "By resource"}
 	survey.AskOne(&survey.Select{
-		Message: "克隆范围:",
+		Message: "Clone scope:",
 		Options: scopeOptions,
 	}, &scope)
 
 	filter := repo.Filter{}
 
 	switch scope {
-	case "按组":
+	case "By group":
 		if len(cfg.Groups) == 0 {
-			fmt.Println("没有配置组")
+			fmt.Println("No groups configured")
 			return
 		}
 		var groupNames []string
@@ -744,13 +744,13 @@ func interactiveClone() {
 		}
 		selectedGroup := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择组:",
+			Message: "Select group:",
 			Options: groupNames,
 		}, &selectedGroup)
 		filter.Group = selectedGroup
-	case "按资源":
+	case "By resource":
 		if len(cfg.Resources) == 0 {
-			fmt.Println("没有配置资源")
+			fmt.Println("No resources configured")
 			return
 		}
 		var resourceNames []string
@@ -759,7 +759,7 @@ func interactiveClone() {
 		}
 		selectedResource := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择资源:",
+			Message: "Select resource:",
 			Options: resourceNames,
 		}, &selectedResource)
 		filter.Resource = selectedResource
@@ -768,27 +768,27 @@ func interactiveClone() {
 	resolver := repo.NewResolver(cfg)
 	repos, err := resolver.ResolveAndFilter(filter)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
 	if len(repos) == 0 {
-		fmt.Println("没有需要克隆的仓库")
+		fmt.Println("No repos to clone")
 		return
 	}
 
 	// Ask for concurrency
 	concurrency := 4
 	survey.AskOne(&survey.Select{
-		Message: "并行度:",
-		Options: []string{"1 (顺序)", "2", "4 (默认)", "8"},
+		Message: "Concurrency:",
+		Options: []string{"1 (sequential)", "2", "4 (default)", "8"},
 	}, &scope)
 	switch scope {
-	case "1 (顺序)":
+	case "1 (sequential)":
 		concurrency = 1
 	case "2":
 		concurrency = 2
-	case "4 (默认)":
+	case "4 (default)":
 		concurrency = 4
 	case "8":
 		concurrency = 8
@@ -799,7 +799,7 @@ func interactiveClone() {
 	for _, r := range repos {
 		fullPath := repo.FullPath(cfg.Base, r)
 		if gitpkg.IsCloned(fullPath) {
-			fmt.Printf("跳过 %s (已克隆)\n", r.Path)
+			fmt.Printf("skipped %s (already cloned)\n", r.Path)
 			continue
 		}
 		toClone = append(toClone, gitpkg.CloneTask{
@@ -809,7 +809,7 @@ func interactiveClone() {
 	}
 
 	if len(toClone) == 0 {
-		fmt.Println("所有仓库已克隆")
+		fmt.Println("All repos already cloned")
 		return
 	}
 
@@ -825,7 +825,7 @@ func interactiveClone() {
 	} else {
 		// Sequential clone
 		for _, task := range toClone {
-			fmt.Printf("克隆 %s...\n", task.Repo.Path)
+			fmt.Printf("Cloning %s...\n", task.Repo.Path)
 			opts := gitpkg.CloneOptions{
 				Token:          task.Repo.Token,
 				Provider:       task.Repo.Provider,
@@ -834,10 +834,10 @@ func interactiveClone() {
 				HasGroupSSHKey: task.Repo.HasGroupSSHKey,
 			}
 			if err := gitpkg.Clone(task.FullPath, task.Repo.SSHURL, task.Repo.CloneURL, opts); err != nil {
-				fmt.Fprintf(os.Stderr, "克隆 %s 失败: %v\n", task.Repo.Path, err)
+				fmt.Fprintf(os.Stderr, "clone %s failed: %v\n", task.Repo.Path, err)
 				continue
 			}
-			fmt.Printf("  %s 完成\n", task.Repo.Name)
+			fmt.Printf("  %s done\n", task.Repo.Name)
 		}
 	}
 }
@@ -847,24 +847,24 @@ func interactiveClone() {
 func interactivePull() {
 	cfg, err := loadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
 	// Determine scope
 	scope := ""
-	scopeOptions := []string{"全部", "按组", "按资源"}
+	scopeOptions := []string{"All", "By group", "By resource"}
 	survey.AskOne(&survey.Select{
-		Message: "拉取范围:",
+		Message: "Pull scope:",
 		Options: scopeOptions,
 	}, &scope)
 
 	filter := repo.Filter{}
 
 	switch scope {
-	case "按组":
+	case "By group":
 		if len(cfg.Groups) == 0 {
-			fmt.Println("没有配置组")
+			fmt.Println("No groups configured")
 			return
 		}
 		var groupNames []string
@@ -873,13 +873,13 @@ func interactivePull() {
 		}
 		selectedGroup := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择组:",
+			Message: "Select group:",
 			Options: groupNames,
 		}, &selectedGroup)
 		filter.Group = selectedGroup
-	case "按资源":
+	case "By resource":
 		if len(cfg.Resources) == 0 {
-			fmt.Println("没有配置资源")
+			fmt.Println("No resources configured")
 			return
 		}
 		var resourceNames []string
@@ -888,7 +888,7 @@ func interactivePull() {
 		}
 		selectedResource := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择资源:",
+			Message: "Select resource:",
 			Options: resourceNames,
 		}, &selectedResource)
 		filter.Resource = selectedResource
@@ -897,27 +897,27 @@ func interactivePull() {
 	resolver := repo.NewResolver(cfg)
 	repos, err := resolver.ResolveAndFilter(filter)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
 	if len(repos) == 0 {
-		fmt.Println("没有找到仓库")
+		fmt.Println("No repos found")
 		return
 	}
 
 	// Ask for concurrency
 	concurrency := 4
 	survey.AskOne(&survey.Select{
-		Message: "并行度:",
-		Options: []string{"1 (顺序)", "2", "4 (默认)", "8"},
+		Message: "Concurrency:",
+		Options: []string{"1 (sequential)", "2", "4 (default)", "8"},
 	}, &scope)
 	switch scope {
-	case "1 (顺序)":
+	case "1 (sequential)":
 		concurrency = 1
 	case "2":
 		concurrency = 2
-	case "4 (默认)":
+	case "4 (default)":
 		concurrency = 4
 	case "8":
 		concurrency = 8
@@ -930,13 +930,13 @@ func interactivePull() {
 	for _, r := range repos {
 		fullPath := repo.FullPath(cfg.Base, r)
 		if !gitpkg.IsCloned(fullPath) {
-			fmt.Printf("跳过 %s (未克隆)\n", r.Path)
+			fmt.Printf("skipped %s (not cloned)\n", r.Path)
 			skipped++
 			continue
 		}
 		ok, reason := gitpkg.CheckPullSafety(fullPath)
 		if !ok {
-			fmt.Printf("跳过 %s (%s)\n", r.Path, reason)
+			fmt.Printf("skipped %s (%s)\n", r.Path, reason)
 			skipped++
 			continue
 		}
@@ -948,9 +948,9 @@ func interactivePull() {
 
 	if len(toPull) == 0 {
 		if skipped > 0 {
-			fmt.Printf("没有需要拉取的仓库: %d 个被跳过\n", skipped)
+			fmt.Printf("No repos to pull: %d skipped\n", skipped)
 		} else {
-			fmt.Println("没有需要拉取的仓库")
+			fmt.Println("No repos to pull")
 		}
 		return
 	}
@@ -965,9 +965,9 @@ func interactivePull() {
 		PrintPullSummary(results, skipped, nil)
 	} else {
 		for _, task := range toPull {
-			fmt.Printf("拉取 %s...\n", task.Repo.Path)
+			fmt.Printf("Pulling %s...\n", task.Repo.Path)
 			if err := gitpkg.Pull(task.FullPath); err != nil {
-				fmt.Fprintf(os.Stderr, "拉取 %s 失败: %v\n", task.Repo.Path, err)
+				fmt.Fprintf(os.Stderr, "pull %s failed: %v\n", task.Repo.Path, err)
 				continue
 			}
 		}
@@ -987,24 +987,24 @@ func interactivePull() {
 func interactiveStatus() {
 	cfg, err := loadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
 	// Determine scope
 	scope := ""
-	scopeOptions := []string{"全部", "按组", "按资源"}
+	scopeOptions := []string{"All", "By group", "By resource"}
 	survey.AskOne(&survey.Select{
-		Message: "查看范围:",
+		Message: "Status scope:",
 		Options: scopeOptions,
 	}, &scope)
 
 	filter := repo.Filter{}
 
 	switch scope {
-	case "按组":
+	case "By group":
 		if len(cfg.Groups) == 0 {
-			fmt.Println("没有配置组")
+			fmt.Println("No groups configured")
 			return
 		}
 		var groupNames []string
@@ -1013,13 +1013,13 @@ func interactiveStatus() {
 		}
 		selectedGroup := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择组:",
+			Message: "Select group:",
 			Options: groupNames,
 		}, &selectedGroup)
 		filter.Group = selectedGroup
-	case "按资源":
+	case "By resource":
 		if len(cfg.Resources) == 0 {
-			fmt.Println("没有配置资源")
+			fmt.Println("No resources configured")
 			return
 		}
 		var resourceNames []string
@@ -1028,7 +1028,7 @@ func interactiveStatus() {
 		}
 		selectedResource := ""
 		survey.AskOne(&survey.Select{
-			Message: "选择资源:",
+			Message: "Select resource:",
 			Options: resourceNames,
 		}, &selectedResource)
 		filter.Resource = selectedResource
@@ -1037,12 +1037,12 @@ func interactiveStatus() {
 	resolver := repo.NewResolver(cfg)
 	repos, err := resolver.ResolveAndFilter(filter)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
 	if len(repos) == 0 {
-		fmt.Println("没有找到仓库")
+		fmt.Println("No repos found")
 		return
 	}
 
@@ -1052,12 +1052,12 @@ func interactiveStatus() {
 		st := gitpkg.GetStatus(fullPath)
 
 		if !st.Cloned {
-			fmt.Printf("%s: 未克隆\n", r.Path)
+			fmt.Printf("%s: not cloned\n", r.Path)
 			continue
 		}
 
 		if st.NotARepo {
-			fmt.Printf("%s: 不是 git 仓库\n", r.Path)
+			fmt.Printf("%s: not a git repo\n", r.Path)
 			continue
 		}
 

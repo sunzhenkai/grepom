@@ -6,31 +6,39 @@ The system SHALL provide a root command `grepom` with the following global flags
 The system SHALL also provide the following subcommands:
 - `init`: initialize configuration file
 - `example`: export a complete example configuration with all features
-- `clone`: clone repositories（使用 5 级认证优先级链，SSH 优先，输出认证尝试日志）
-- `list`: list resources, groups, or repositories（通过 --type 标志切换，默认列出 repos）
+- `clone`: clone repositories (uses 5-level auth priority chain, SSH first, outputs auth attempt logs)
+- `list`: list resources, groups, or repositories (switch via --type flag, defaults to repos)
 - `status`: show git status
 - `pull`: pull updates
 - `add`: add resource, group, or repository
 - `sync`: synchronize repository metadata from groups (does NOT clone or pull)
 - `search`: search repositories by name (substring match)
-- `interactive`: 进入交互式操作模式
+- `interactive`: enter interactive operation mode
+
+All cobra command descriptions (Short, Long, Example) and flag help text SHALL be in English.
 
 #### Scenario: Show help
 - **WHEN** user runs `grepom --help`
-- **THEN** the system displays available commands including `example`, `search` and `interactive` and global flags
+- **THEN** the system displays available commands including `example`, `search` and `interactive` and global flags, all in English
+
+#### Scenario: Mixed language output no longer occurs
+- **WHEN** user runs any grepom command that produces output
+- **THEN** all user-facing output (descriptions, help text, progress, errors) SHALL be in English only
 
 ### Requirement: clone command
-系统 SHALL 提供 `grepom clone` 命令，将仓库 clone 到本地文件系统。Group 内 repo 的目标路径通过路径推导公式计算。独立 repo 使用其 local_path。
+The system SHALL provide a `grepom clone` command that clones repositories to the local filesystem. The target path for repos within a group is calculated via path derivation formula. Standalone repos use their local_path.
 
-clone 认证优先级链（5 级，SSH 优先）：group/repo SSH key → group/repo token → resource SSH key → 推导 SSH → resource token。
+Clone auth priority chain (5 levels, SSH first): group/repo SSH key → group/repo token → resource SSH key → derived SSH → resource token.
 
-clone 过程中 SHALL 输出每种认证方式的尝试日志。并行模式下，认证日志 SHALL 被收集到结果中而非直接输出，完成后按仓库分组展示。
+During clone, the system SHALL output logs for each auth method attempt. In parallel mode, auth logs SHALL be collected into results rather than output directly, and displayed grouped by repository after completion.
 
-clone 命令 SHALL 支持 `--concurrency` 参数（默认 4）控制并行克隆的仓库数量。当 `--concurrency` 为 1 时保持原有顺序行为。
+The clone command SHALL support `--concurrency` parameter (default 4) to control the number of parallel clone workers. When `--concurrency` is 1, sequential behavior is preserved.
+
+All auth strategy labels and progress output SHALL be in English.
 
 #### Scenario: Clone all repos
-- **WHEN** 用户运行 `grepom clone`（无参数）
-- **THEN** 系统从所有 groups 和独立 repos 并行克隆所有仓库到各自推导的本地路径，按优先级链尝试认证，完成后输出操作摘要
+- **WHEN** user runs `grepom clone` (no arguments)
+- **THEN** the system clones all repos from all groups and standalone repos in parallel to their derived local paths, attempts auth via priority chain, and outputs an operation summary in English
 
 #### Scenario: Clone single repo by name
 - **WHEN** 用户运行 `grepom clone web-app`
@@ -48,13 +56,13 @@ clone 命令 SHALL 支持 `--concurrency` 参数（默认 4）控制并行克隆
 - **WHEN** group 配置了 ssh_key
 - **THEN** 系统优先使用 group 的 SSH key 进行 SSH clone
 
-#### Scenario: 认证尝试日志输出
-- **WHEN** clone 过程中尝试某种认证方式（顺序模式）
-- **THEN** 系统输出日志 `  [N/M] 尝试 <方式> (<级别>)...`；失败时输出错误摘要；成功时输出 "成功"
+#### Scenario: Auth attempt log output
+- **WHEN** an auth method is attempted during clone (sequential mode)
+- **THEN** the system outputs log `  [N/M] trying <method> (<level>)...`; on failure outputs error summary; on success outputs "ok"
 
-#### Scenario: 并行模式下认证日志收集
-- **WHEN** 并行克隆（`--concurrency > 1`）过程中尝试某种认证方式
-- **THEN** 系统将认证尝试日志收集到结果中，完成后按仓库分组展示
+#### Scenario: Parallel mode auth log collection
+- **WHEN** during parallel clone (`--concurrency > 1`) an auth method is attempted
+- **THEN** the system collects auth attempt logs into results and displays them grouped by repository after completion
 
 #### Scenario: 指定并行度
 - **WHEN** 用户运行 `grepom clone --concurrency 8`
@@ -68,19 +76,21 @@ clone 命令 SHALL 支持 `--concurrency` 参数（默认 4）控制并行克隆
 - **THEN** 系统提示 "did you mean `grepom clone`?" 并以非零状态码退出
 
 ### Requirement: list command
-系统 SHALL 提供 `grepom list` 命令，支持通过 `--type` 标志切换列出目标。`--type` 支持三个值：`repos`（默认）、`resources`、`groups`。
+The system SHALL provide a `grepom list` command that supports switching list target via `--type` flag. `--type` supports three values: `repos` (default), `resources`, `groups`.
 
-当 `--type` 为 `repos`（默认）时，行为与原有 list 命令一致：列出所有已发现的仓库，支持位置参数 `[name]` 按名称过滤、`--group` 按分组过滤、`--resource` 按 resource 过滤。
+When `--type` is `repos` (default), behavior matches original list command: list all discovered repos, supports positional `[name]` filter, `--group` filter, `--resource` filter.
 
-当 `--type` 为 `resources` 或 `groups` 时，位置参数和过滤标志不生效。
+When `--type` is `resources` or `groups`, positional args and filter flags are ignored.
 
-`list` 命令的位置参数 SHALL 支持关键字 `groups` 和 `resources`，当位置参数为 `groups` 时等价于 `--type groups`，当位置参数为 `resources` 时等价于 `--type resources`。位置参数关键字优先级低于 `--type` 标志（即 `grepom list groups --type repos` 以 `--type repos` 为准）。
+The `list` command positional arg SHALL support keywords `groups` and `resources`. When positional arg is `groups` it is equivalent to `--type groups`; when `resources` equivalent to `--type resources`. Positional keyword has lower priority than `--type` flag (i.e., `grepom list groups --type repos` uses `--type repos`).
 
-`--remote` 标志 SHALL 支持 `--type groups`，通过 provider API 查询远程 groups/orgs 列表。`--remote` 不支持 `--type resources`。
+The `--remote` flag SHALL support `--type groups`, querying remote groups/orgs list via provider API. `--remote` does not support `--type resources`.
 
-`list` 命令 SHALL 支持 `--no-push` 标志筛选有未推送提交的仓库，以及 `--no-commit` 标志筛选有未提交更改的仓库。两个标志仅对本地仓库列表生效（`--type repos` 默认模式），在 `--remote` 模式下静默忽略。
+The `list` command SHALL support `--no-push` flag to filter repos with unpushed commits, and `--no-commit` flag to filter repos with uncommitted changes. Both flags only apply to local repo listing (`--type repos` default mode), silently ignored in `--remote` mode.
 
-list 命令的 flag SHALL 支持短别名：`-t`（`--type`）、`-r`（`--remote`）、`-g`（`--group`）、`-R`（`--resource`）。
+list command flags SHALL support short aliases: `-t` (`--type`), `-r` (`--remote`), `-g` (`--group`), `-R` (`--resource`).
+
+When output contains informational messages (e.g., skipping a group with no bound resource), those messages SHALL be in English.
 
 #### Scenario: List all repos
 - **WHEN** user runs `grepom list`
@@ -96,7 +106,7 @@ list 命令的 flag SHALL 支持短别名：`-t`（`--type`）、`-r`（`--remot
 
 #### Scenario: List by group using short flag
 - **WHEN** user runs `grepom list -g frontend`
-- **THEN** the system displays repos only from group `frontend`，行为与 `--group` 完全一致
+- **THEN** the system displays repos only from group `frontend`, behavior identical to `--group`
 
 #### Scenario: List by resource
 - **WHEN** user runs `grepom list --resource work-gl`
@@ -104,7 +114,7 @@ list 命令的 flag SHALL 支持短别名：`-t`（`--type`）、`-r`（`--remot
 
 #### Scenario: List by resource using short flag
 - **WHEN** user runs `grepom list -R work-gl`
-- **THEN** the system displays repos from all groups and independent repos that reference resource `work-gl`，行为与 `--resource` 完全一致
+- **THEN** the system displays repos from all groups and independent repos that reference resource `work-gl`, behavior identical to `--resource`
 
 #### Scenario: --type repos 等同默认行为
 - **WHEN** user runs `grepom list --type repos`
@@ -146,9 +156,13 @@ list 命令的 flag SHALL 支持短别名：`-t`（`--type`）、`-r`（`--remot
 - **WHEN** user runs `grepom list --remote --type resources`
 - **THEN** 系统输出错误信息 "--remote is not supported with --type resources"
 
+#### Scenario: List with unbound resource warning
+- **WHEN** user runs `grepom list` and a group has no bound resource
+- **THEN** the system outputs an English message indicating the group was skipped due to no bound resource
+
 #### Scenario: 使用混合短别名
 - **WHEN** user runs `grepom list -r -t groups -R work-gl`
-- **THEN** 系统仅查询 resource `work-gl` 的远程 groups，行为与 `grepom list --remote --type groups --resource work-gl` 完全一致
+- **THEN** the system queries only resource `work-gl` remote groups, behavior identical to `grepom list --remote --type groups --resource work-gl`
 
 ### Requirement: status command
 系统 SHALL 提供 `grepom status` 命令，显示已克隆仓库的 git 状态概要和每个仓库的精简状态。

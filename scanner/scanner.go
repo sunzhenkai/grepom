@@ -44,15 +44,15 @@ func (s *Scanner) loadConfig() (config.Config, error) {
 		viper.SetConfigFile(s.opts.GitleaksConfigPath)
 		viper.SetConfigType("toml")
 		if err := viper.ReadInConfig(); err != nil {
-			return config.Config{}, fmt.Errorf("读取 gitleaks 配置失败: %w", err)
+			return config.Config{}, fmt.Errorf("failed to read gitleaks config: %w", err)
 		}
 		var vc config.ViperConfig
 		if err := viper.Unmarshal(&vc); err != nil {
-			return config.Config{}, fmt.Errorf("解析 gitleaks 配置失败: %w", err)
+			return config.Config{}, fmt.Errorf("failed to parse gitleaks config: %w", err)
 		}
 		cfg, err := vc.Translate()
 		if err != nil {
-			return config.Config{}, fmt.Errorf("转换 gitleaks 配置失败: %w", err)
+			return config.Config{}, fmt.Errorf("failed to translate gitleaks config: %w", err)
 		}
 		return cfg, nil
 	}
@@ -60,7 +60,7 @@ func (s *Scanner) loadConfig() (config.Config, error) {
 	// 使用默认配置
 	detector, err := detect.NewDetectorDefaultConfig()
 	if err != nil {
-		return config.Config{}, fmt.Errorf("加载默认 gitleaks 配置失败: %w", err)
+		return config.Config{}, fmt.Errorf("failed to load default gitleaks config: %w", err)
 	}
 	return detector.Config, nil
 }
@@ -102,7 +102,7 @@ func (s *Scanner) newDetectorForRepo(ctx context.Context, repoPath string) (*det
 	if _, err := os.Stat(gitleaksignorePath); err == nil {
 		if err := det.AddGitleaksIgnore(gitleaksignorePath); err != nil {
 			// 非致命错误，仅记录
-			fmt.Fprintf(os.Stderr, "warning: 读取 .gitleaksignore 失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "warning: failed to read .gitleaksignore: %v\n", err)
 		}
 	}
 
@@ -126,7 +126,7 @@ func (s *Scanner) ScanDir(ctx context.Context, repoPath string) ([]Finding, erro
 
 	findings, err := det.DetectSource(ctx, files)
 	if err != nil {
-		return nil, fmt.Errorf("扫描工作区失败: %w", err)
+		return nil, fmt.Errorf("failed to scan workspace: %w", err)
 	}
 
 	return convertFindings(findings, ""), nil
@@ -141,7 +141,7 @@ func (s *Scanner) ScanGitHistory(ctx context.Context, repoPath string) ([]Findin
 
 	gitCmd, err := sources.NewGitLogCmdContext(ctx, repoPath, "")
 	if err != nil {
-		return nil, fmt.Errorf("启动 git log 命令失败: %w", err)
+		return nil, fmt.Errorf("failed to start git log command: %w", err)
 	}
 
 	gitSource := &sources.Git{
@@ -153,7 +153,7 @@ func (s *Scanner) ScanGitHistory(ctx context.Context, repoPath string) ([]Findin
 
 	findings, err := det.DetectSource(ctx, gitSource)
 	if err != nil {
-		return nil, fmt.Errorf("扫描 git 历史失败: %w", err)
+		return nil, fmt.Errorf("failed to scan git history: %w", err)
 	}
 
 	return convertFindings(findings, ""), nil
