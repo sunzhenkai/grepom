@@ -457,3 +457,79 @@ func TestDirCommand_ShellPrintsFunction(t *testing.T) {
 		t.Errorf("should not contain Go-side fzfAvailable, got:\n%s", output)
 	}
 }
+
+// 创建使用相对路径 base 的测试配置
+func createDirTestConfigRelativeBase(t *testing.T, dir string) string {
+	t.Helper()
+	content := `
+base: repos
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: dsp
+    resource: gl
+    path: my-org/dsp
+    local_path: ./dsp
+    repos:
+      - name: adx-service
+        url: https://gitlab.com/my-org/dsp/adx-service.git
+        path: my-org/dsp/adx-service
+      - name: merger-service
+        url: https://gitlab.com/my-org/dsp/merger-service.git
+        path: my-org/dsp/merger-service
+`
+	configPath := filepath.Join(dir, ".grepom.yml")
+	os.WriteFile(configPath, []byte(content), 0644)
+	return configPath
+}
+
+func TestDirCommand_RelativeBaseFromSubdir(t *testing.T) {
+	// 模拟真实场景：配置文件使用相对 base，用户在子目录执行 gcd
+	parent := t.TempDir()
+	configPath := createDirTestConfigRelativeBase(t, parent)
+
+	// 创建子目录模拟用户当前在 adx-service 中
+	subdir := filepath.Join(parent, "repos", "dsp", "adx-service")
+	os.MkdirAll(subdir, 0755)
+
+	// 切换到子目录
+	oldDir, _ := os.Getwd()
+	os.Chdir(subdir)
+	defer os.Chdir(oldDir)
+
+	// 使用空 configFile，让 FindConfig 向上查找
+	configFile = ""
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := dirCmd.RunE(dirCmd, []string{"merger-service"})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("dirCmd failed: %v", err)
+	}
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := strings.TrimSpace(buf.String())
+
+	// 必须输出绝对路径，不能是相对路径
+	expected := filepath.Join(parent, "repos", "dsp", "merger-service")
+	if output != expected {
+		t.Errorf("expected absolute path %q, got %q", expected, output)
+	}
+
+	// 确保输出不是相对路径
+	if !filepath.IsAbs(output) {
+		t.Errorf("expected absolute path, got relative path: %q", output)
+	}
+
+	_ = configPath
+}

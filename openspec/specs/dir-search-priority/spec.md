@@ -63,3 +63,14 @@
 #### Scenario: 有参数且无 fzf 时 gcd 使用 head -n 1
 - **WHEN** 系统未安装 fzf，用户执行 `gcd web`
 - **THEN** gcd 函数通过 `grepom dir web | head -n 1` 取第一个匹配目录
+
+### Requirement: 有参数时输出绝对路径
+当 `grepom dir <keyword>` 带参数调用时，无论 `base` 配置为绝对路径或相对路径，系统 SHALL 输出匹配仓库的绝对本地路径。
+
+#### Scenario: base 为相对路径时仍输出绝对路径
+- **WHEN** `.grepom.yml` 的 `base` 为 `repos/my-org`（相对路径），用户在项目子目录执行 `grepom dir web-app`
+- **THEN** 系统输出绝对路径（如 `/home/user/projects/repos/my-org/frontend/web-app`）
+
+#### Scenario: base 为相对路径时从子目录调用
+- **WHEN** `.grepom.yml` 的 `base` 为 `repos/my-org`，用户在 `repos/my-org/frontend/web-app` 子目录中执行 `grepom dir web-api`
+- **THEN** 系统输出绝对路径（如 `/home/user/projects/repos/my-org/backend/web-api`），而非相对路径

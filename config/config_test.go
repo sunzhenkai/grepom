@@ -894,6 +894,53 @@ func TestResolveRepoPath(t *testing.T) {
 	}
 }
 
+// --- ResolveBasePath tests ---
+
+func TestResolveBasePath_RelativePath(t *testing.T) {
+	cfg := &Config{Base: "repos/my-org"}
+	ResolveBasePath(cfg, "/home/user/projects")
+	expected := filepath.Join("/home/user/projects", "repos/my-org")
+	if cfg.Base != expected {
+		t.Errorf("expected %s, got %s", expected, cfg.Base)
+	}
+}
+
+func TestResolveBasePath_DotSlashPrefix(t *testing.T) {
+	cfg := &Config{Base: "./repos"}
+	ResolveBasePath(cfg, "/home/user/projects")
+	expected := filepath.Join("/home/user/projects", "repos")
+	if cfg.Base != expected {
+		t.Errorf("expected %s, got %s", expected, cfg.Base)
+	}
+}
+
+func TestResolveBasePath_AbsolutePath_Unchanged(t *testing.T) {
+	cfg := &Config{Base: "/opt/repos"}
+	ResolveBasePath(cfg, "/home/user/projects")
+	if cfg.Base != "/opt/repos" {
+		t.Errorf("expected /opt/repos, got %s", cfg.Base)
+	}
+}
+
+func TestResolveBasePath_TildePath_Unchanged(t *testing.T) {
+	// expandTilde 已经在 Load 中处理了 ~/，这里测试已是绝对路径后的情况
+	home, _ := os.UserHomeDir()
+	expanded := filepath.Join(home, "projects")
+	cfg := &Config{Base: expanded}
+	ResolveBasePath(cfg, "/some/other/dir")
+	if cfg.Base != expanded {
+		t.Errorf("expected %s, got %s", expanded, cfg.Base)
+	}
+}
+
+func TestResolveBasePath_EmptyBase_NoPanic(t *testing.T) {
+	cfg := &Config{Base: ""}
+	ResolveBasePath(cfg, "/home/user/projects")
+	if cfg.Base != "" {
+		t.Errorf("expected empty, got %s", cfg.Base)
+	}
+}
+
 // --- Path conflict detection tests ---
 
 func TestDetectPathConflicts_NoConflict(t *testing.T) {

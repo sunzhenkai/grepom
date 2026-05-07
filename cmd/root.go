@@ -55,6 +55,8 @@ func loadConfig() (string, *config.Config, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	// 将相对 base 解析为绝对路径（相对于配置文件所在目录）
+	config.ResolveBasePath(cfg, filepath.Dir(absPath))
 	return absPath, cfg, nil
 }
 

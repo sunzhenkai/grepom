@@ -189,6 +189,15 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// ResolveBasePath resolves cfg.Base to an absolute path if it is relative.
+// configDir is the directory containing the configuration file.
+// If cfg.Base is already absolute, this function does nothing.
+func ResolveBasePath(cfg *Config, configDir string) {
+	if cfg.Base != "" && !filepath.IsAbs(cfg.Base) {
+		cfg.Base = filepath.Join(configDir, cfg.Base)
+	}
+}
+
 // stripQuotes removes matching leading and trailing quotes (single or double) from s.
 // Only strips when the first and last characters form a matching pair.
 func stripQuotes(s string) string {
