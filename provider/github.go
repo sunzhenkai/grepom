@@ -32,6 +32,10 @@ type githubOrg struct {
 	Login string `json:"login"`
 }
 
+type githubUserInfo struct {
+	Type string `json:"type"` // "User" or "Organization"
+}
+
 func (g *GitHubProvider) getClient() *http.Client {
 	if g.client == nil {
 		g.client = &http.Client{Timeout: 30 * time.Second}
@@ -102,15 +106,59 @@ func isGitHubNotFound(err error) bool {
 	return strings.Contains(err.Error(), "github API error 404")
 }
 
-// listReposFor tries /users/ first, then falls back to /orgs/ on 404.
-func (g *GitHubProvider) listReposFor(ctx context.Context, params ListReposParams, name string) ([]Repo, error) {
-	repos, err := g.listUserRepos(ctx, params, name)
+// getEntityType queries GitHub to determine if a name refers to a User or Organization.
+// Returns "User", "Organization", or "" on 404 (not found).
+func (g *GitHubProvider) getEntityType(ctx context.Context, params ListReposParams, name string) (string, error) {
+	apiURL := fmt.Sprintf("%s/users/%s", params.ServerURL, name)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		if isGitHubNotFound(err) {
-			repos, err = g.listOrgRepos(ctx, params, name)
-		}
+		return "", fmt.Errorf("create request: %w", err)
 	}
-	return repos, err
+
+	req.Header.Set("Authorization", "Bearer "+params.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := g.getClient().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("github API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var info githubUserInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+
+	return info.Type, nil
+}
+
+// listReposFor detects the entity type (User/Organization) and selects
+// the correct API endpoint to list all repositories including private ones.
+func (g *GitHubProvider) listReposFor(ctx context.Context, params ListReposParams, name string) ([]Repo, error) {
+	entityType, err := g.getEntityType(ctx, params, name)
+	if err != nil {
+		return nil, err
+	}
+
+	switch entityType {
+	case "Organization":
+		return g.listOrgRepos(ctx, params, name)
+	case "User":
+		return g.listUserRepos(ctx, params, name)
+	default:
+		// 404 or unknown type: fall back to /orgs/ endpoint
+		return g.listOrgRepos(ctx, params, name)
+	}
 }
 
 func (g *GitHubProvider) listUserRepos(ctx context.Context, params ListReposParams, username string) ([]Repo, error) {
