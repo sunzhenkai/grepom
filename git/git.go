@@ -264,6 +264,81 @@ func Push(path string, args ...string) error {
 	return nil
 }
 
+// GetCurrentBranch returns the name of the current branch (or detached HEAD commit).
+// Uses `git rev-parse --abbrev-ref HEAD`.
+func GetCurrentBranch(path string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// GetRemoteURL returns the URL of the specified remote (e.g. "origin").
+func GetRemoteURL(path string, remote string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "remote", "get-url", remote)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get remote %s URL: %w", remote, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// HasUnpushedCommits checks whether the given branch has commits not yet pushed to origin.
+// Returns (true, N, nil) if there are N unpushed commits.
+// Returns (false, 0, nil) if everything is pushed.
+func HasUnpushedCommits(path string, branch string) (bool, int, error) {
+	// Try to count commits between origin/{branch} and HEAD
+	cmd := exec.Command("git", "-C", path, "log", "origin/"+branch+"..HEAD", "--oneline")
+	out, err := cmd.Output()
+	if err != nil {
+		// origin/{branch} may not exist (new branch never pushed)
+		// Fall back: count all commits on this branch vs empty tree
+		cmd2 := exec.Command("git", "-C", path, "rev-list", "--count", "HEAD")
+		out2, err2 := cmd2.Output()
+		if err2 != nil {
+			return false, 0, fmt.Errorf("failed to check unpushed commits: %w", err)
+		}
+		count := strings.TrimSpace(string(out2))
+		n := 0
+		fmt.Sscanf(count, "%d", &n)
+		if n > 0 {
+			return true, n, nil
+		}
+		return false, 0, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return false, 0, nil
+	}
+	return true, len(lines), nil
+}
+
+// GetHeadCommitMessage returns the full commit message of HEAD.
+// Uses `git log -1 --format=%B`.
+func GetHeadCommitMessage(path string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "log", "-1", "--format=%B")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get HEAD commit message: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// PushBranch pushes a specific branch to origin.
+func PushBranch(path string, branch string) error {
+	cmd := exec.Command("git", "-C", path, "push", "-u", "origin", branch)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git push origin %s: %w", branch, err)
+	}
+	return nil
+}
+
 // GetDefaultBranch returns the short name of the default branch (the one origin/HEAD points to).
 // Returns an error if the repo doesn't exist or origin/HEAD is not set.
 func GetDefaultBranch(path string) (string, error) {

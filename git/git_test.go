@@ -712,6 +712,301 @@ func TestPullAll_InvalidConcurrency(t *testing.T) {
 	}
 }
 
+// --- GetCurrentBranch tests ---
+
+func TestGetCurrentBranch_RealRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+
+	branch, err := GetCurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if branch != "main" && branch != "master" {
+		t.Errorf("expected main or master, got %s", branch)
+	}
+}
+
+func TestGetCurrentBranch_FeatureBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	run("checkout", "-b", "feature-x")
+
+	branch, err := GetCurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if branch != "feature-x" {
+		t.Errorf("expected feature-x, got %s", branch)
+	}
+}
+
+func TestGetCurrentBranch_NotAGitDir(t *testing.T) {
+	_, err := GetCurrentBranch(t.TempDir())
+	if err == nil {
+		t.Error("expected error for non-git directory")
+	}
+}
+
+// --- GetRemoteURL tests ---
+
+func TestGetRemoteURL_Origin(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("remote", "add", "origin", "https://github.com/myorg/myrepo.git")
+
+	url, err := GetRemoteURL(dir, "origin")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if url != "https://github.com/myorg/myrepo.git" {
+		t.Errorf("expected https://github.com/myorg/myrepo.git, got %s", url)
+	}
+}
+
+func TestGetRemoteURL_SSH(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("remote", "add", "origin", "git@github.com:myorg/myrepo.git")
+
+	url, err := GetRemoteURL(dir, "origin")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if url != "git@github.com:myorg/myrepo.git" {
+		t.Errorf("expected SSH URL, got %s", url)
+	}
+}
+
+func TestGetRemoteURL_NoRemote(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+
+	_, err := GetRemoteURL(dir, "origin")
+	if err == nil {
+		t.Error("expected error for missing remote")
+	}
+}
+
+// --- HasUnpushedCommits tests ---
+
+func TestHasUnpushedCommits_NoRemote(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+
+	has, count, err := HasUnpushedCommits(dir, "main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !has {
+		t.Error("expected has=true for branch with no remote tracking")
+	}
+	if count < 1 {
+		t.Errorf("expected at least 1 commit, got %d", count)
+	}
+}
+
+func TestHasUnpushedCommits_UpToDate(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	run("remote", "add", "origin", "https://github.com/example/repo.git")
+	// Simulate origin/main being at HEAD by creating the ref
+	run("update-ref", "refs/remotes/origin/main", "HEAD")
+
+	has, _, err := HasUnpushedCommits(dir, "main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if has {
+		t.Error("expected has=false when up to date")
+	}
+}
+
+func TestHasUnpushedCommits_WithExtra(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	run("remote", "add", "origin", "https://github.com/example/repo.git")
+	run("update-ref", "refs/remotes/origin/main", "HEAD")
+	// Add extra commit
+	run("commit", "--allow-empty", "-m", "second")
+
+	has, count, err := HasUnpushedCommits(dir, "main")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !has {
+		t.Error("expected has=true with extra commit")
+	}
+	if count != 1 {
+		t.Errorf("expected 1 unpushed commit, got %d", count)
+	}
+}
+
+// --- GetHeadCommitMessage tests ---
+
+func TestGetHeadCommitMessage_SingleLine(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "fix: typo")
+
+	msg, err := GetHeadCommitMessage(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg != "fix: typo" {
+		t.Errorf("expected 'fix: typo', got %q", msg)
+	}
+}
+
+func TestGetHeadCommitMessage_MultiLine(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	dir := t.TempDir()
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Run()
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "test")
+
+	// Create a file and commit with multi-line message
+	writeFile(t, filepath.Join(dir, "file.txt"), "hello")
+	runGit("add", ".")
+	cmd := exec.Command("git", "commit", "-m", "feat: add dark mode\n\nImplement dark mode toggle")
+	cmd.Dir = dir
+	cmd.Run()
+
+	msg, err := GetHeadCommitMessage(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(msg, "feat: add dark mode") {
+		t.Errorf("expected title in message, got %q", msg)
+	}
+	if !strings.Contains(msg, "Implement dark mode toggle") {
+		t.Errorf("expected body in message, got %q", msg)
+	}
+}
+
+func TestGetHeadCommitMessage_NotAGitDir(t *testing.T) {
+	_, err := GetHeadCommitMessage(t.TempDir())
+	if err == nil {
+		t.Error("expected error for non-git directory")
+	}
+}
+
 // --- Push tests ---
 
 func TestPush_NotAGitDir(t *testing.T) {
