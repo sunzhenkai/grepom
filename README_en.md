@@ -14,6 +14,7 @@ Git Repository Orchestrator & Manager — manage multiple git repositories acros
 - **Secret scanning** — built-in gitleaks engine with workspace and git history scanning
 - **Push guard** — automatically detect secrets before pushing
 - **Interactive mode** — menu-driven interactive UI
+- **MR/PR creation** — create GitHub Pull Requests or GitLab Merge Requests from the CLI
 
 ## Install
 
@@ -135,6 +136,14 @@ grepom scan --gitleaks-config rules.toml  # Use custom rules
 grepom push                         # Scan and push (if no secrets found)
 grepom push -f                      # Force push even if secrets found
 grepom push -- origin main          # Pass arguments through to git push
+
+# MR/PR Creation
+grepom mr                           # Auto-detect and create MR/PR
+grepom mr --from feat-x --to main   # Specify source and target branches
+grepom mr --title "Add dark mode"   # Custom title
+grepom mr --draft                   # Create as draft MR/PR
+grepom mr --web                     # Open browser to create
+grepom pr                           # Alias for 'mr'
 
 # CI/CD Pipelines
 grepom pipeline list                # List pipelines for repos
