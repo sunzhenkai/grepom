@@ -335,6 +335,14 @@ func extractHost(remoteURL string) string {
 	for _, scheme := range []string{"https://", "http://"} {
 		if strings.HasPrefix(remoteURL, scheme) {
 			rest := strings.TrimPrefix(remoteURL, scheme)
+			// Strip userinfo (user:password@) if present before host
+			// Only strip if @ appears before the first /
+			if atIdx := strings.Index(rest, "@"); atIdx >= 0 {
+				slashIdx := strings.Index(rest, "/")
+				if slashIdx < 0 || atIdx < slashIdx {
+					rest = rest[atIdx+1:]
+				}
+			}
 			if idx := strings.Index(rest, "/"); idx >= 0 {
 				return rest[:idx]
 			}
@@ -345,9 +353,12 @@ func extractHost(remoteURL string) string {
 	// Handle ssh://host/path format
 	if strings.HasPrefix(remoteURL, "ssh://") {
 		rest := strings.TrimPrefix(remoteURL, "ssh://")
-		// Strip user@ if present
+		// Strip user@ if present before host
 		if atIdx := strings.Index(rest, "@"); atIdx >= 0 {
-			rest = rest[atIdx+1:]
+			slashIdx := strings.Index(rest, "/")
+			if slashIdx < 0 || atIdx < slashIdx {
+				rest = rest[atIdx+1:]
+			}
 		}
 		if idx := strings.Index(rest, "/"); idx >= 0 {
 			return rest[:idx]

@@ -138,6 +138,17 @@ Only new repos are added to the config; existing entries are never removed.`,
 					excludedCount++
 					continue
 				}
+				// Check for duplicates within the current batch
+				exists := false
+				for _, existing := range newGroupRepos {
+					if existing.URL == r.CloneURL {
+						exists = true
+						break
+					}
+				}
+				if exists {
+					continue
+				}
 				newGroupRepos = append(newGroupRepos, config.GroupRepo{
 					Name: r.Name,
 					URL:  r.CloneURL,

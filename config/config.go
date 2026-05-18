@@ -568,7 +568,14 @@ func SyncGroupRepos(configPath, groupName string, newRepos []GroupRepo) (int, er
 			return err
 		}
 
+		// Deduplicate within newRepos batch (first-seen wins)
+		seen := make(map[string]bool)
 		for _, nr := range newRepos {
+			if seen[nr.URL] {
+				continue // skip duplicate within batch
+			}
+			seen[nr.URL] = true
+
 			found := false
 			for _, er := range group.Repos {
 				if er.URL == nr.URL {

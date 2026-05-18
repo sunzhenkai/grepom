@@ -1174,6 +1174,94 @@ groups:
 	}
 }
 
+func TestSyncGroupRepos_DeduplicateWithinBatch(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+    local_path: ./frontend
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	// newRepos contains the same URL twice
+	newRepos := []GroupRepo{
+		{Name: "repo1", URL: "https://gitlab.com/my-org/frontend/repo1.git", Path: "my-org/frontend/repo1"},
+		{Name: "repo2", URL: "https://gitlab.com/my-org/frontend/repo2.git", Path: "my-org/frontend/repo2"},
+		{Name: "repo1-dup", URL: "https://gitlab.com/my-org/frontend/repo1.git", Path: "my-org/frontend/repo1"}, // duplicate URL
+	}
+
+	added, err := SyncGroupRepos(path, "frontend", newRepos)
+	if err != nil {
+		t.Fatalf("SyncGroupRepos failed: %v", err)
+	}
+	if added != 2 {
+		t.Errorf("expected 2 repos added (duplicate within batch skipped), got %d", added)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after SyncGroupRepos failed: %v", err)
+	}
+	if len(cfg.Groups[0].Repos) != 2 {
+		t.Fatalf("expected 2 repos in group, got %d", len(cfg.Groups[0].Repos))
+	}
+}
+
+func TestSyncGroupRepos_DuplicateInBatchAndExisting(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+    local_path: ./frontend
+    repos:
+      - name: repo1
+        url: https://gitlab.com/my-org/frontend/repo1.git
+        path: my-org/frontend/repo1
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	// newRepos contains duplicate URLs, one of which also exists in config
+	newRepos := []GroupRepo{
+		{Name: "repo1", URL: "https://gitlab.com/my-org/frontend/repo1.git", Path: "my-org/frontend/repo1"},       // already exists
+		{Name: "repo1-dup", URL: "https://gitlab.com/my-org/frontend/repo1.git", Path: "my-org/frontend/repo1"},   // duplicate
+		{Name: "repo2", URL: "https://gitlab.com/my-org/frontend/repo2.git", Path: "my-org/frontend/repo2"},       // new
+	}
+
+	added, err := SyncGroupRepos(path, "frontend", newRepos)
+	if err != nil {
+		t.Fatalf("SyncGroupRepos failed: %v", err)
+	}
+	if added != 1 {
+		t.Errorf("expected 1 repo added, got %d", added)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after SyncGroupRepos failed: %v", err)
+	}
+	if len(cfg.Groups[0].Repos) != 2 {
+		t.Fatalf("expected 2 repos in group (1 existing + 1 new), got %d", len(cfg.Groups[0].Repos))
+	}
+}
+
 // --- File lock test ---
 
 func TestWithFileLock_ConcurrentAccess(t *testing.T) {
