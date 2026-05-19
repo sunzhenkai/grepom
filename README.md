@@ -146,9 +146,11 @@ grepom mr --web                     # 在浏览器中打开创建页面
 grepom pr                           # 'mr' 的别名
 
 # CI/CD 管道
-grepom pipeline list                # 列出仓库的管道
-grepom pipeline list --status running  # 按状态过滤
-grepom pipeline watch               # 实时监控管道状态
+grepom watch                        # 自动推断当前仓库，监控最新管道
+grepom watch web-app                # 监控指定仓库的最新管道
+grepom watch --id 1234              # 监控指定管道 ID
+grepom pipeline list <repo-name>    # 列出仓库的管道
+grepom pipeline watch <repo-name>   # 实时监控管道状态
 
 # 维护
 grepom prune                        # 删除配置中不存在的已克隆仓库

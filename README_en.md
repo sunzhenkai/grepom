@@ -146,9 +146,11 @@ grepom mr --web                     # Open browser to create
 grepom pr                           # Alias for 'mr'
 
 # CI/CD Pipelines
-grepom pipeline list                # List pipelines for repos
-grepom pipeline list --status running  # Filter by status
-grepom pipeline watch               # Watch pipeline status in real-time
+grepom watch                        # Auto-detect repo and watch latest pipeline
+grepom watch web-app                # Watch a specific repo's latest pipeline
+grepom watch --id 1234              # Watch a specific pipeline by ID
+grepom pipeline list <repo-name>    # List pipelines for a repo
+grepom pipeline watch <repo-name>   # Watch pipeline status in real-time
 
 # Maintenance
 grepom prune                        # Remove cloned repos not in config

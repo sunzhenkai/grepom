@@ -19,6 +19,17 @@ var (
 	pipelineID    int
 )
 
+// WatchTarget 封装了 pipeline watch 所需的全部信息。
+// 由 resolvePipelineInput 或 resolveCurrentRepoPipeline 构造，
+// 供 runWatchLoop 使用。
+type WatchTarget struct {
+	Provider  cicd.PipelineProvider
+	ServerURL string
+	RepoPath  string // 远程路径，如 "org/team/repo"
+	Token     string
+	RepoName  string // 用于显示的仓库名称
+}
+
 var pipelineCmd = &cobra.Command{
 	Use:   "pipeline",
 	Short: "View CI/CD pipelines",
@@ -160,46 +171,63 @@ func runPipelineWatch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	target := WatchTarget{
+		Provider:  provider,
+		ServerURL: serverURL,
+		RepoPath:  remotePath,
+		Token:     token,
+		RepoName:  repoName,
+	}
+
+	return runWatchLoop(target, pipelineID, cmd)
+}
+
+// runWatchLoop 是 pipeline watch 和顶级 watch 命令共享的 watch 循环。
+// target 包含 pipeline 查询所需的全部信息。
+// targetID 为 0 时表示监控最新 pipeline，否则监控指定 ID。
+func runWatchLoop(target WatchTarget, targetID int, cmd *cobra.Command) error {
 	// 确定要 watch 的 pipeline ID
-	targetID := pipelineID
 	if targetID == 0 {
 		// 获取最新 pipeline
-		pipelines, err := provider.ListPipelines(cmd.Context(), cicd.ListPipelinesParams{
-			ServerURL: serverURL,
-			Token:     token,
-			RepoPath:  remotePath,
+		pipelines, err := target.Provider.ListPipelines(cmd.Context(), cicd.ListPipelinesParams{
+			ServerURL: target.ServerURL,
+			Token:     target.Token,
+			RepoPath:  target.RepoPath,
 			Limit:     1,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to find latest pipeline: %w", err)
 		}
 		if len(pipelines) == 0 {
-			fmt.Printf("No pipelines found for %s.\n", repoName)
+			fmt.Printf("No pipelines found for %s.\n", target.RepoName)
 			return nil
 		}
 		targetID = pipelines[0].ID
 	}
 
-	fmt.Printf("Watching pipeline #%d for %s... (Ctrl+C to stop)\n", targetID, repoName)
+	fmt.Printf("Watching pipeline #%d for %s... (Ctrl+C to stop)\n", targetID, target.RepoName)
 
 	// 设置 signal handling：Ctrl+C 优雅退出
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// watch 循环
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
 	// 立即查询一次
-	pipeline, err := provider.GetPipeline(ctx, cicd.GetPipelineParams{
-		ServerURL:  serverURL,
-		Token:      token,
-		RepoPath:   remotePath,
+	pipeline, err := target.Provider.GetPipeline(ctx, cicd.GetPipelineParams{
+		ServerURL:  target.ServerURL,
+		Token:      target.Token,
+		RepoPath:   target.RepoPath,
 		PipelineID: targetID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get pipeline: %w", err)
 	}
+
+	// 打印 pipeline URL（开始时）
+	printPipelineURL(pipeline)
+
+	// watch 循环
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		// 渲染状态行
@@ -217,6 +245,8 @@ func runPipelineWatch(cmd *cobra.Command, args []string) error {
 			fmt.Printf("Pipeline finished: %s (%s)\n",
 				cicd.FormatStatus(pipeline.Status),
 				cicd.FormatDuration(pipeline.Duration))
+			// 打印 pipeline URL（终态退出时）
+			printPipelineURL(pipeline)
 			return nil
 		}
 
@@ -225,21 +255,31 @@ func runPipelineWatch(cmd *cobra.Command, args []string) error {
 		case <-ctx.Done():
 			fmt.Println()
 			fmt.Printf("Watch stopped. Current status: %s\n", cicd.FormatStatus(pipeline.Status))
+			// 打印 pipeline URL（Ctrl+C 退出时）
+			printPipelineURL(pipeline)
 			return nil
 		case <-ticker.C:
 		}
 
 		// 轮询
-		pipeline, err = provider.GetPipeline(ctx, cicd.GetPipelineParams{
-			ServerURL:  serverURL,
-			Token:      token,
-			RepoPath:   remotePath,
+		pipeline, err = target.Provider.GetPipeline(ctx, cicd.GetPipelineParams{
+			ServerURL:  target.ServerURL,
+			Token:      target.Token,
+			RepoPath:   target.RepoPath,
 			PipelineID: targetID,
 		})
 		if err != nil {
 			fmt.Println()
 			return fmt.Errorf("polling error: %w", err)
 		}
+	}
+}
+
+// printPipelineURL 打印 pipeline 的 Web URL。
+// URL 为空时静默跳过。
+func printPipelineURL(p *cicd.Pipeline) {
+	if p.URL != "" {
+		fmt.Printf("  👉 %s\n", p.URL)
 	}
 }
 
