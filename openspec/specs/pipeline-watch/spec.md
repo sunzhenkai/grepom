@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: pipeline watch 命令实时监控 pipeline 状态
 
