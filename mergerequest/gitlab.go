@@ -90,6 +90,21 @@ func (p *GitLabMRProvider) CreateMergeRequest(ctx context.Context, params Create
 		return nil, fmt.Errorf("gitlab: authentication failed (invalid token)")
 	}
 
+	if resp.StatusCode == http.StatusConflict {
+		// 409 Conflict: an open MR already exists for this source branch.
+		// Try to find and return the existing MR.
+		existing, findErr := p.findOpenMR(ctx, params)
+		if findErr != nil {
+			// Search failed; return original conflict error
+			return nil, fmt.Errorf("gitlab API error %d: %s", resp.StatusCode, string(respBody))
+		}
+		if existing != nil {
+			return existing, nil
+		}
+		// No existing MR found; return original conflict error
+		return nil, fmt.Errorf("gitlab API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	if resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("gitlab API error %d: %s", resp.StatusCode, string(respBody))
 	}
@@ -111,6 +126,56 @@ func (p *GitLabMRProvider) CreateMergeRequest(ctx context.Context, params Create
 		SourceBranch: mrResp.SourceBranch,
 		TargetBranch: mrResp.TargetBranch,
 		Draft:        isDraft,
+	}, nil
+}
+
+// findOpenMR searches for an existing open MR for the given source branch.
+// It calls GitLab's list MR API with source_branch and state=opened filters.
+func (p *GitLabMRProvider) findOpenMR(ctx context.Context, params CreateMergeRequestParams) (*MergeRequest, error) {
+	encodedPath := url.PathEscape(params.RepoPath)
+	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests?source_branch=%s&state=opened",
+		params.ServerURL, encodedPath, url.QueryEscape(params.SourceBranch))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create search request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", params.Token)
+
+	resp, err := p.getClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitlab search API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var mrList []gitlabMRResponse
+	if err := json.Unmarshal(respBody, &mrList); err != nil {
+		return nil, fmt.Errorf("decode search response: %w", err)
+	}
+
+	if len(mrList) == 0 {
+		return nil, nil
+	}
+
+	// Take the first (typically only) open MR
+	mr := mrList[0]
+	isDraft := strings.HasPrefix(mr.Title, "Draft: ")
+	return &MergeRequest{
+		ID:           mr.ID,
+		Number:       mr.IID,
+		Title:        mr.Title,
+		Description:  mr.Description,
+		URL:          mr.WebURL,
+		State:        mr.State,
+		SourceBranch: mr.SourceBranch,
+		TargetBranch: mr.TargetBranch,
+		Draft:        isDraft,
+		AlreadyExists: true,
 	}, nil
 }
 

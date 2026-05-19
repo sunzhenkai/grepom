@@ -119,7 +119,7 @@ func TestGitHubMRProvider_CreateMergeRequest(t *testing.T) {
 
 func TestGitHubMRProvider_CreateMergeRequest_Error(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnprocessableEntity)
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(githubErrorResponse{
 			Message: "Validation Failed: No commits between main and feature-x",
 		})
@@ -138,6 +138,126 @@ func TestGitHubMRProvider_CreateMergeRequest_Error(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestGitHubMRProvider_CreateMergeRequest_Unprocessable_ExistingPR(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(githubErrorResponse{
+				Message: "Validation Failed: A pull request already exists for myorg:feature-x.",
+			})
+			return
+		}
+		// GET request: search for existing PR
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]githubPRResponse{
+				{
+					ID:      42,
+					Number:  7,
+					Title:   "feat: add dark mode",
+					Body:    "Existing PR",
+					State:   "open",
+					HTMLURL: "https://github.com/myorg/myrepo/pull/7",
+					Head:    githubPRBranch{Ref: "feature-x"},
+					Base:    githubPRBranch{Ref: "main"},
+					Draft:   false,
+				},
+			})
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := &GitHubMRProvider{}
+	mr, err := p.CreateMergeRequest(t.Context(), CreateMergeRequestParams{
+		ServerURL:    server.URL,
+		Token:        "test-token",
+		RepoPath:     "myorg/myrepo",
+		Title:        "feat: add dark mode",
+		SourceBranch: "feature-x",
+		TargetBranch: "main",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !mr.AlreadyExists {
+		t.Error("expected AlreadyExists=true")
+	}
+	if mr.Number != 7 {
+		t.Errorf("expected number 7, got %d", mr.Number)
+	}
+	if mr.URL != "https://github.com/myorg/myrepo/pull/7" {
+		t.Errorf("unexpected URL: %s", mr.URL)
+	}
+}
+
+func TestGitHubMRProvider_CreateMergeRequest_Unprocessable_NoExistingPR(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(githubErrorResponse{
+				Message: "Validation Failed",
+			})
+			return
+		}
+		// GET request: search returns empty list
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]githubPRResponse{})
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := &GitHubMRProvider{}
+	_, err := p.CreateMergeRequest(t.Context(), CreateMergeRequestParams{
+		ServerURL:    server.URL,
+		Token:        "test-token",
+		RepoPath:     "myorg/myrepo",
+		Title:        "test",
+		SourceBranch: "feature-x",
+		TargetBranch: "main",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for 422 with no existing PR found")
+	}
+}
+
+func TestGitHubMRProvider_CreateMergeRequest_Unprocessable_SearchFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(githubErrorResponse{
+				Message: "Validation Failed: A pull request already exists.",
+			})
+			return
+		}
+		// GET request: search API fails
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"message":"Internal Server Error"}`))
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := &GitHubMRProvider{}
+	_, err := p.CreateMergeRequest(t.Context(), CreateMergeRequestParams{
+		ServerURL:    server.URL,
+		Token:        "test-token",
+		RepoPath:     "myorg/myrepo",
+		Title:        "test",
+		SourceBranch: "feature-x",
+		TargetBranch: "main",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for 422 with search failure")
 	}
 }
 

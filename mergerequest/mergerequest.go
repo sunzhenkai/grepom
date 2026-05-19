@@ -16,6 +16,7 @@ type MergeRequest struct {
 	SourceBranch string
 	TargetBranch string
 	Draft        bool
+	AlreadyExists bool // true if an open MR/PR for this branch already existed
 }
 
 // CreateMergeRequestParams contains the parameters for creating a MR/PR.

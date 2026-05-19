@@ -113,6 +113,29 @@ func (p *GitHubMRProvider) CreateMergeRequest(ctx context.Context, params Create
 		return nil, fmt.Errorf("github: forbidden (check token permissions)")
 	}
 
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		// 422: A PR already exists for this branch (or validation error).
+		// Try to find and return the existing PR.
+		existing, findErr := p.findOpenPR(ctx, params)
+		if findErr != nil {
+			// Search failed; return original error
+			var errResp githubErrorResponse
+			if json.Unmarshal(respBody, &errResp) == nil && errResp.Message != "" {
+				return nil, fmt.Errorf("github API error %d: %s", resp.StatusCode, errResp.Message)
+			}
+			return nil, fmt.Errorf("github API error %d: %s", resp.StatusCode, string(respBody))
+		}
+		if existing != nil {
+			return existing, nil
+		}
+		// No existing PR found; return original error
+		var errResp githubErrorResponse
+		if json.Unmarshal(respBody, &errResp) == nil && errResp.Message != "" {
+			return nil, fmt.Errorf("github API error %d: %s", resp.StatusCode, errResp.Message)
+		}
+		return nil, fmt.Errorf("github API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	if resp.StatusCode != http.StatusCreated {
 		var errResp githubErrorResponse
 		if json.Unmarshal(respBody, &errResp) == nil && errResp.Message != "" {
@@ -136,6 +159,64 @@ func (p *GitHubMRProvider) CreateMergeRequest(ctx context.Context, params Create
 		SourceBranch: prResp.Head.Ref,
 		TargetBranch: prResp.Base.Ref,
 		Draft:        prResp.Draft,
+	}, nil
+}
+
+// findOpenPR searches for an existing open PR for the given source branch.
+// It calls GitHub's list PRs API with head and state=open filters.
+func (p *GitHubMRProvider) findOpenPR(ctx context.Context, params CreateMergeRequestParams) (*MergeRequest, error) {
+	apiBase := githubAPIURL(params.ServerURL)
+
+	// GitHub's head parameter requires "owner:branch" format
+	// Extract owner from RepoPath (which is "owner/repo")
+	owner := params.RepoPath
+	if idx := strings.Index(owner, "/"); idx >= 0 {
+		owner = owner[:idx]
+	}
+	head := fmt.Sprintf("%s:%s", owner, params.SourceBranch)
+
+	apiURL := fmt.Sprintf("%s/repos/%s/pulls?head=%s&state=open", apiBase, params.RepoPath, url.QueryEscape(head))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create search request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+params.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := p.getClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github search API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var prList []githubPRResponse
+	if err := json.Unmarshal(respBody, &prList); err != nil {
+		return nil, fmt.Errorf("decode search response: %w", err)
+	}
+
+	if len(prList) == 0 {
+		return nil, nil
+	}
+
+	// Take the first (typically only) open PR
+	pr := prList[0]
+	return &MergeRequest{
+		ID:           pr.ID,
+		Number:       pr.Number,
+		Title:        pr.Title,
+		Description:  pr.Body,
+		URL:          pr.HTMLURL,
+		State:        pr.State,
+		SourceBranch: pr.Head.Ref,
+		TargetBranch: pr.Base.Ref,
+		Draft:        pr.Draft,
+		AlreadyExists: true,
 	}, nil
 }
 

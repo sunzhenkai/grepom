@@ -223,8 +223,13 @@ func runMR(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 12: Output result
-	fmt.Printf("\n  \u2705 %s #%d: %s\n  %s\n\n",
-		strings.ToUpper(mrLabel(providerName)), mr.Number, mr.Title, mr.URL)
+	if mr.AlreadyExists {
+		fmt.Printf("\n  \u2139\uFE0F  %s #%d already exists: %s\n  %s\n\n",
+			strings.ToUpper(mrLabel(providerName)), mr.Number, mr.Title, mr.URL)
+	} else {
+		fmt.Printf("\n  \u2705 %s #%d: %s\n  %s\n\n",
+			strings.ToUpper(mrLabel(providerName)), mr.Number, mr.Title, mr.URL)
+	}
 
 	return nil
 }

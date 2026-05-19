@@ -175,6 +175,128 @@ func TestGitLabMRProvider_CreateMergeRequest_Error(t *testing.T) {
 	}
 }
 
+func TestGitLabMRProvider_CreateMergeRequest_Conflict_ExistingMR(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"message":["Another open merge request already exists for this source branch: !45"]}`))
+			return
+		}
+		// GET request: search for existing MR
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]gitlabMRResponse{
+				{
+					ID:           789,
+					IID:          45,
+					Title:        "feat: add dark mode",
+					Description:  "Existing MR",
+					State:        "opened",
+					WebURL:       "https://gitlab.com/myorg/myrepo/-/merge_requests/45",
+					SourceBranch: "feature-x",
+					TargetBranch: "main",
+				},
+			})
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := &GitLabMRProvider{}
+	mr, err := p.CreateMergeRequest(t.Context(), CreateMergeRequestParams{
+		ServerURL:    server.URL,
+		Token:        "test-token",
+		RepoPath:     "myorg/myrepo",
+		Title:        "feat: add dark mode",
+		SourceBranch: "feature-x",
+		TargetBranch: "main",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !mr.AlreadyExists {
+		t.Error("expected AlreadyExists=true")
+	}
+	if mr.Number != 45 {
+		t.Errorf("expected number 45, got %d", mr.Number)
+	}
+	if mr.URL != "https://gitlab.com/myorg/myrepo/-/merge_requests/45" {
+		t.Errorf("unexpected URL: %s", mr.URL)
+	}
+}
+
+func TestGitLabMRProvider_CreateMergeRequest_Conflict_NoExistingMR(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"message":["Another open merge request already exists for this source branch: !45"]}`))
+			return
+		}
+		// GET request: search returns empty list
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]gitlabMRResponse{})
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := &GitLabMRProvider{}
+	_, err := p.CreateMergeRequest(t.Context(), CreateMergeRequestParams{
+		ServerURL:    server.URL,
+		Token:        "test-token",
+		RepoPath:     "myorg/myrepo",
+		Title:        "test",
+		SourceBranch: "feature-x",
+		TargetBranch: "main",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for 409 with no existing MR found")
+	}
+	if !strings.Contains(err.Error(), "409") {
+		t.Errorf("expected 409 error, got: %v", err)
+	}
+}
+
+func TestGitLabMRProvider_CreateMergeRequest_Conflict_SearchFails(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"message":["Another open merge request already exists for this source branch: !45"]}`))
+			return
+		}
+		// GET request: search API fails
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"message":"500 Internal Server Error"}`))
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := &GitLabMRProvider{}
+	_, err := p.CreateMergeRequest(t.Context(), CreateMergeRequestParams{
+		ServerURL:    server.URL,
+		Token:        "test-token",
+		RepoPath:     "myorg/myrepo",
+		Title:        "test",
+		SourceBranch: "feature-x",
+		TargetBranch: "main",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for 409 with search failure")
+	}
+	// Should fall back to original 409 error
+	if !strings.Contains(err.Error(), "409") {
+		t.Errorf("expected 409 fallback error, got: %v", err)
+	}
+}
+
 func TestGitLabMRProvider_URLEncodedPath(t *testing.T) {
 	var receivedPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
