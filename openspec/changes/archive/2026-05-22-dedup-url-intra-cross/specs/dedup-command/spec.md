@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: dedup 命令检测跨 group 同名 repo
 
@@ -60,14 +60,6 @@
 - **WHEN** 用户运行 `grepom dedup --group core-team --reference infra-team`
 - **THEN** 系统 SHALL 依次执行 Step 1、Step 2、Step 3
 
-### Requirement: dedup 只修改 target group
-
-系统 SHALL 只修改 `--group` 指定的 target group 的配置，reference group 不受任何影响。
-
-#### Scenario: reference group 不被修改
-- **WHEN** dedup 在 target group 中排除了与 reference group 同名的 repo
-- **THEN** reference group 的 exclude_repos 和 repos 列表 SHALL 保持不变
-
 ### Requirement: dedup 从 target group 移除同名 repo 并追加 exclude_repos
 
 系统 SHALL 对 Step 3 中 target group 与 reference 同名的 repos 执行两个操作：从 `repos` 列表移除该条目，并将 repo name 追加到 `exclude_repos`（如尚未包含）。此行为与原逻辑完全一致。
@@ -111,11 +103,3 @@
   - "Intra-group dedup"：每组列出删除的重复条目和计数
   - "Cross-group URL warnings"：每个跨组重复 URL 列出涉及的 group
   - "Cross-group name dedup"（仅 Step 3 触发时）：每个同名冲突列出处理结果
-
-### Requirement: dedup 写入使用文件锁
-
-系统 SHALL 在写入 config 时使用 `WithFileLock` 机制，防止并发写入冲突。
-
-#### Scenario: 并发 dedup 安全
-- **WHEN** 两个 dedup 操作同时运行
-- **THEN** 系统 SHALL 通过文件锁确保 config 写入不冲突

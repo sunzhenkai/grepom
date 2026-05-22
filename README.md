@@ -151,10 +151,14 @@ grepom watch web-app                # 监控指定仓库的最新管道
 grepom watch --id 1234              # 监控指定管道 ID
 grepom pipeline list <repo-name>    # 列出仓库的管道
 grepom pipeline watch <repo-name>   # 实时监控管道状态
+grepom tag -w                       # 创建版本标签后自动监控管道状态
 
 # 维护
 grepom prune                        # 删除配置中不存在的已克隆仓库
-grepom dedup                        # 去重仓库条目
+grepom dedup                        # 检查所有组的组内重复和跨组警告
+grepom dedup --group core-team      # 仅检查 core-team 组
+grepom dedup --group core-team --reference infra-team  # 额外执行按名称跨组去重
+grepom dedup --apply                # 执行实际写入
 
 # 添加资源/组/仓库
 grepom add resource --name my-gl --provider gitlab --url https://gitlab.com --token '${GITLAB_TOKEN}'

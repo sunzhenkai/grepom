@@ -151,10 +151,14 @@ grepom watch web-app                # Watch a specific repo's latest pipeline
 grepom watch --id 1234              # Watch a specific pipeline by ID
 grepom pipeline list <repo-name>    # List pipelines for a repo
 grepom pipeline watch <repo-name>   # Watch pipeline status in real-time
+grepom tag -w                       # Create version tag, then watch pipeline status
 
 # Maintenance
 grepom prune                        # Remove cloned repos not in config
-grepom dedup                        # Deduplicate repo entries
+grepom dedup                        # Check all groups for intra-group dupes and cross-group warnings
+grepom dedup --group core-team      # Check only core-team group
+grepom dedup --group core-team --reference infra-team  # Also exclude by name against infra-team
+grepom dedup --apply                # Apply changes
 
 # Add resources/groups/repos
 grepom add resource --name my-gl --provider gitlab --url https://gitlab.com --token '${GITLAB_TOKEN}'

@@ -646,6 +646,45 @@ func DedupGroupRepos(configPath, targetGroupName string, repoNames []string) ([]
 	return excluded, err
 }
 
+// DedupIntraGroupRepos removes duplicate repos within a group based on normalized URL.
+// Keeps the first occurrence of each URL, removes subsequent duplicates.
+// Does NOT add removed repos to exclude_repos.
+// Returns the names of repos that were removed, and any error.
+func DedupIntraGroupRepos(configPath, groupName string) ([]string, error) {
+	var removed []string
+	err := WithFileLock(configPath, 30*time.Second, func() error {
+		cfg, err := Load(configPath)
+		if err != nil {
+			return err
+		}
+
+		idx, group, err := cfg.FindGroup(groupName)
+		if err != nil {
+			return err
+		}
+
+		seen := make(map[string]bool)
+		var kept []GroupRepo
+		for _, r := range group.Repos {
+			norm := NormalizeRepoURL(r.URL)
+			if seen[norm] {
+				removed = append(removed, r.Name)
+			} else {
+				seen[norm] = true
+				kept = append(kept, r)
+			}
+		}
+
+		if len(removed) == 0 {
+			return nil
+		}
+
+		cfg.Groups[idx].Repos = kept
+		return writeConfig(configPath, cfg)
+	})
+	return removed, err
+}
+
 // isExcludedName checks if a repo name is already covered by existing exclude patterns.
 func isExcludedName(patterns []string, name string) bool {
 	for _, p := range patterns {

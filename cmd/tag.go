@@ -15,6 +15,7 @@ var (
 	tagTest   bool
 	tagPush   bool
 	tagDryRun bool
+	tagWatch  bool
 	tagMsg    string
 )
 
@@ -27,11 +28,17 @@ Supports two version formats:
   - v version (default): vMAJOR.MINOR.PATCH (e.g. v0.1.2)
   - t version (-t flag): tMAJOR.MINOR.PATCH.ITER (e.g. t0.1.2.3)
 
+Use -w/--watch to automatically watch the CI/CD pipeline after creating the tag.
+This is a convenience shortcut for "tag && watch" — the pipeline is auto-detected
+from the current git repository using the same 3-level fallback as "grepom watch".
+
 This command does not depend on grepom config files and can be used in any git repository.`,
 	Example: `  grepom tag                      # v0.1.5 -> v0.1.6
   grepom tag -t                   # t0.1.6.0 (first t version)
   grepom tag -p                   # create v and push to all remotes
   grepom tag -t -p                # create t and push
+  grepom tag -w                   # create v, then watch pipeline
+  grepom tag -w -p                # create v, push, then watch pipeline
   grepom tag --dry-run            # preview only
   grepom tag -m "release v0.2.0"  # annotated tag`,
 	RunE: runTag,
@@ -40,6 +47,7 @@ This command does not depend on grepom config files and can be used in any git r
 func init() {
 	tagCmd.Flags().BoolVarP(&tagTest, "test", "t", false, "create t-prefix version (test release)")
 	tagCmd.Flags().BoolVarP(&tagPush, "push", "p", false, "push tag to all remotes after creation")
+	tagCmd.Flags().BoolVarP(&tagWatch, "watch", "w", false, "watch pipeline after tag creation")
 	tagCmd.Flags().BoolVar(&tagDryRun, "dry-run", false, "preview what would be created, without actually creating")
 	tagCmd.Flags().StringVarP(&tagMsg, "message", "m", "", "message for annotated tag (default: lightweight tag)")
 	rootCmd.AddCommand(tagCmd)
@@ -83,13 +91,36 @@ func runTag(cmd *cobra.Command, args []string) error {
 	// Compute next v version
 	major, minor, patch = gitpkg.NextVPatch(major, minor, patch)
 
+	var tagErr error
 	if tagTest {
 		// t version: first 3 digits follow v calculation, 4th digit is independent
-		return runTTag(major, minor, patch, latestVTag)
+		tagErr = runTTag(major, minor, patch, latestVTag)
+	} else {
+		// v version
+		tagErr = runVTag(major, minor, patch, latestVTag)
 	}
 
-	// v version
-	return runVTag(major, minor, patch, latestVTag)
+	// If tag creation failed, return the error without watching
+	if tagErr != nil {
+		return tagErr
+	}
+
+	// If --dry-run was used, tag was not actually created — skip watch
+	if tagDryRun {
+		return nil
+	}
+
+	// If -w/--watch is set, watch the latest pipeline after tag creation
+	if tagWatch {
+		target, resolveErr := resolveCurrentRepoPipeline()
+		if resolveErr != nil {
+			fmt.Printf("\nTag created successfully, but failed to auto-detect pipeline:\n%v\n", resolveErr)
+			return resolveErr
+		}
+		return runWatchLoop(target, 0, cmd)
+	}
+
+	return nil
 }
 
 // runVTag computes, creates, and optionally pushes a v tag.
