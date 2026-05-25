@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
@@ -117,6 +118,8 @@ func runTag(cmd *cobra.Command, args []string) error {
 			fmt.Printf("\nTag created successfully, but failed to auto-detect pipeline:\n%v\n", resolveErr)
 			return resolveErr
 		}
+		fmt.Println("Waiting 1s for GitLab to create pipeline...")
+		time.Sleep(time.Second)
 		return runWatchLoop(target, 0, cmd)
 	}
 
