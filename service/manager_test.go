@@ -10,10 +10,10 @@ import (
 
 func testManager(t *testing.T) *Manager {
 	t.Helper()
-	old := UserConfigDirFunc
-	t.Cleanup(func() { UserConfigDirFunc = old })
+	old := StateHomeFunc
+	t.Cleanup(func() { StateHomeFunc = old })
 	base := t.TempDir()
-	UserConfigDirFunc = func() (string, error) { return base, nil }
+	StateHomeFunc = func() (string, error) { return base, nil }
 
 	cfgPath := filepath.Join(t.TempDir(), ".grepom.yml")
 	mgr, err := NewManager(cfgPath, nil)

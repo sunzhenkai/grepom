@@ -27,7 +27,7 @@ func TestParseSvcRunArgs(t *testing.T) {
 	}
 }
 
-func TestPrintSvcTableIncludesPathAndStatus(t *testing.T) {
+func TestPrintSvcTableCompact(t *testing.T) {
 	var buf bytes.Buffer
 	entries := []service.Entry{
 		{
@@ -41,11 +41,41 @@ func TestPrintSvcTableIncludesPathAndStatus(t *testing.T) {
 			Status: service.StatusRunning,
 		},
 	}
-	if err := printSvcTable(&buf, entries); err != nil {
+	if err := printSvcTable(&buf, entries, false); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"NAME", "STATUS", "PATH", "api", "running", "/tmp/api", "make dev"} {
+	for _, want := range []string{"NAME", "STATUS", "PATH", "api", "running", "/tmp/api"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, absent := range []string{"COMMAND", "LOG", "make dev", "/tmp/logs/api.log"} {
+		if strings.Contains(out, absent) {
+			t.Fatalf("compact output should not contain %q:\n%s", absent, out)
+		}
+	}
+}
+
+func TestPrintSvcTableVerbose(t *testing.T) {
+	var buf bytes.Buffer
+	entries := []service.Entry{
+		{
+			Record: service.Record{
+				Name:    "api",
+				PID:     100,
+				Cwd:     "/tmp/api",
+				Command: "make dev",
+				LogPath: "/tmp/logs/api.log",
+			},
+			Status: service.StatusRunning,
+		},
+	}
+	if err := printSvcTable(&buf, entries, true); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"NAME", "STATUS", "PATH", "COMMAND", "LOG", "api", "running", "/tmp/api", "make dev", "/tmp/logs/api.log"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}

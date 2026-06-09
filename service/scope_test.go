@@ -19,11 +19,12 @@ func TestScopeFromPathStable(t *testing.T) {
 	}
 }
 
-func TestStateDirUsesUserConfig(t *testing.T) {
-	old := UserConfigDirFunc
-	t.Cleanup(func() { UserConfigDirFunc = old })
-	UserConfigDirFunc = func() (string, error) {
-		return t.TempDir(), nil
+func TestStateDirUsesStateHome(t *testing.T) {
+	old := StateHomeFunc
+	t.Cleanup(func() { StateHomeFunc = old })
+	stateHome := t.TempDir()
+	StateHomeFunc = func() (string, error) {
+		return stateHome, nil
 	}
 	scope, err := ScopeFromPath("/tmp/demo/.grepom.yml")
 	if err != nil {
@@ -33,7 +34,8 @@ func TestStateDirUsesUserConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(filepath.Dir(dir)) != "services" {
-		t.Fatalf("unexpected state dir: %s", dir)
+	want := filepath.Join(stateHome, "grepom", "services", scope)
+	if dir != want {
+		t.Fatalf("state dir = %q, want %q", dir, want)
 	}
 }

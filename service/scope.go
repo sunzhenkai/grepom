@@ -7,8 +7,19 @@ import (
 	"path/filepath"
 )
 
-// UserConfigDirFunc resolves the user config directory. Injectable for tests.
-var UserConfigDirFunc = os.UserConfigDir
+// StateHomeFunc resolves the XDG state home directory. Injectable for tests.
+var StateHomeFunc = defaultStateHome
+
+func defaultStateHome() (string, error) {
+	if v := os.Getenv("XDG_STATE_HOME"); v != "" {
+		return v, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state"), nil
+}
 
 // ScopeFromPath returns a stable scope identifier for a config path or working directory.
 func ScopeFromPath(configPath string) (string, error) {
@@ -35,7 +46,7 @@ func ScopeFromPath(configPath string) (string, error) {
 
 // StateDir returns the machine-local state directory for a scope.
 func StateDir(scopeID string) (string, error) {
-	base, err := UserConfigDirFunc()
+	base, err := StateHomeFunc()
 	if err != nil {
 		return "", err
 	}

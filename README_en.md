@@ -183,8 +183,9 @@ grepom tag -w                       # Create version tag, then watch pipeline st
 # Service process management
 grepom svc run -- make dev         # Start a service in the current directory (default name = dirname)
 grepom svc run api                  # Start configured service from .grepom.yml
-grepom svc list                     # Table of name, status, PID, path, command, and log path
-grepom svc status api               # Show one service status
+grepom svc list                     # Compact table: name, status, PID, path
+grepom svc list -v                  # Full table: also shows command and log path
+grepom svc status api               # Show full status for one service
 grepom svc logs -f api              # Follow service logs
 grepom svc logs --open api          # Open log file in editor
 grepom svc kill api                 # Stop a service
@@ -193,6 +194,10 @@ grepom svc clean                    # Remove records for exited services
 grepom svc dir api                  # Print service working directory
 grepom svc tui                      # Open interactive service management UI
 eval "$(grepom svc --shell)"        # Enable gsvc helper for cd to service directories
+
+# Shell completion
+eval "$(grepom completion bash)"    # bash completion (or source <(grepom completion bash))
+eval "$(grepom completion zsh)"     # zsh completion
 
 # Maintenance
 grepom prune                        # Remove cloned repos not in config
@@ -230,6 +235,15 @@ grepom sync   # uses the resolved token value
 |------|-------|---------|-------------|
 | `--config` | `-c` | auto-detect | Path to config file (default: searches for `.grepom.yml` upward) |
 | `--verbose` | `-v` | `false` | Enable verbose output |
+
+### Service state directory
+
+Service registry and logs are stored under the XDG state directory:
+
+- When `XDG_STATE_HOME` is set: `$XDG_STATE_HOME/grepom/services/<scope>/`
+- Otherwise: `~/.local/state/grepom/services/<scope>/`
+
+Data from the legacy `Application Support` (macOS) or `UserConfigDir` location is not migrated automatically. If `grepom svc list` appears empty after upgrading, stop or clean old services and run them again.
 
 ## Build
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 
@@ -27,13 +28,14 @@ const svcShellHelper = `gsvc() {
 }`
 
 var (
-	svcForce      bool
-	svcLogLines   int
-	svcLogFollow  bool
-	svcLogOpen    bool
-	svcCleanLogs  bool
-	svcCleanAll   bool
-	svcShell      bool
+	svcForce       bool
+	svcListVerbose bool
+	svcLogLines    int
+	svcLogFollow   bool
+	svcLogOpen     bool
+	svcCleanLogs   bool
+	svcCleanAll    bool
+	svcShell       bool
 )
 
 var svcCmd = &cobra.Command{
@@ -42,7 +44,7 @@ var svcCmd = &cobra.Command{
 	Short:   "Manage local development service processes",
 	Long: `Start, list, monitor, and stop local development services.
 
-Services run in the background with logs stored under the user config directory.
+Services run in the background with runtime state stored under the XDG state directory.
 Service definitions can be declared in .grepom.yml or passed directly on the command line.`,
 	Example: `  grepom svc run -- make dev
   grepom svc run api
@@ -83,14 +85,20 @@ func init() {
 }
 
 func registerSvcSubcommands(parent *cobra.Command) {
-	parent.AddCommand(newSvcRunCmd())
-	parent.AddCommand(newSvcListCmd())
-	parent.AddCommand(newSvcStatusCmd())
-	parent.AddCommand(newSvcLogsCmd())
-	parent.AddCommand(newSvcKillCmd())
-	parent.AddCommand(newSvcCleanCmd())
-	parent.AddCommand(newSvcDirCmd())
-	parent.AddCommand(newSvcTuiCmd())
+	run := newSvcRunCmd()
+	list := newSvcListCmd()
+	status := newSvcStatusCmd()
+	logs := newSvcLogsCmd()
+	kill := newSvcKillCmd()
+	clean := newSvcCleanCmd()
+	dir := newSvcDirCmd()
+	tui := newSvcTuiCmd()
+
+	for _, c := range []*cobra.Command{run, logs, kill, dir, status} {
+		c.ValidArgsFunction = completeSvcNames
+	}
+
+	parent.AddCommand(run, list, status, logs, kill, clean, dir, tui)
 }
 
 func newSvcRunCmd() *cobra.Command {
@@ -114,12 +122,15 @@ With -- <command>, the command is executed in the service directory.`,
 }
 
 func newSvcListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List managed services",
-		Example: `  grepom svc list`,
+		Example: `  grepom svc list
+  grepom svc list -v`,
 		RunE:    runSvcList,
 	}
+	cmd.Flags().BoolVarP(&svcListVerbose, "verbose", "v", false, "show command and log path columns")
+	return cmd
 }
 
 func newSvcStatusCmd() *cobra.Command {
@@ -334,7 +345,7 @@ func runSvcList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printSvcTable(os.Stdout, entries)
+	return printSvcTable(os.Stdout, entries, svcListVerbose)
 }
 
 func runSvcStatus(cmd *cobra.Command, args []string) error {
@@ -349,25 +360,50 @@ func runSvcStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printSvcTable(os.Stdout, []service.Entry{*entry})
+	return printSvcTable(os.Stdout, []service.Entry{*entry}, true)
 }
 
-func printSvcTable(w io.Writer, entries []service.Entry) error {
+func printSvcTable(w io.Writer, entries []service.Entry, verbose bool) error {
 	if len(entries) == 0 {
 		fmt.Fprintln(w, "No services found.")
 		return nil
 	}
 	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tSTATUS\tPID\tPATH\tCOMMAND\tLOG")
+	if verbose {
+		fmt.Fprintln(tw, "NAME\tSTATUS\tPID\tPATH\tCOMMAND\tLOG")
+	} else {
+		fmt.Fprintln(tw, "NAME\tSTATUS\tPID\tPATH")
+	}
 	for _, e := range entries {
 		pid := "-"
 		if e.Record.PID > 0 {
 			pid = fmt.Sprintf("%d", e.Record.PID)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			e.Record.Name, e.Status, pid, e.Record.Cwd, e.Record.Command, e.Record.LogPath)
+		path := shortenHomePath(e.Record.Cwd)
+		if verbose {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				e.Record.Name, e.Status, pid, path, e.Record.Command, e.Record.LogPath)
+		} else {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+				e.Record.Name, e.Status, pid, path)
+		}
 	}
 	return tw.Flush()
+}
+
+func shortenHomePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	prefix := home + string(filepath.Separator)
+	if strings.HasPrefix(path, prefix) {
+		return "~" + path[len(home):]
+	}
+	return path
 }
 
 func runSvcLogs(cmd *cobra.Command, args []string) error {

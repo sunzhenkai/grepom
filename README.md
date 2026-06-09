@@ -183,8 +183,9 @@ grepom tag -w                       # 创建版本标签后自动监控管道状
 # 服务进程管理
 grepom svc run -- make dev         # 在当前目录后台启动服务（默认服务名为目录名）
 grepom svc run api                  # 从 .grepom.yml 读取 api 服务定义并启动
-grepom svc list                     # 表格展示服务名、状态、PID、路径、命令和日志路径
-grepom svc status api               # 查看单个服务状态
+grepom svc list                     # 紧凑表格：服务名、状态、PID、路径
+grepom svc list -v                  # 完整表格：额外显示命令和日志路径
+grepom svc status api               # 查看单个服务完整状态
 grepom svc logs -f api              # 持续查看服务日志
 grepom svc logs --open api          # 用编辑器打开日志文件
 grepom svc kill api                 # 停止服务
@@ -193,6 +194,10 @@ grepom svc clean                    # 清理已退出服务的记录
 grepom svc dir api                  # 输出服务工作目录
 grepom svc tui                      # 打开 TUI 管理界面
 eval "$(grepom svc --shell)"        # 启用 gsvc 快捷跳转服务目录
+
+# Shell 补全
+eval "$(grepom completion bash)"    # bash 补全（或 source <(grepom completion bash)）
+eval "$(grepom completion zsh)"   # zsh 补全
 
 # 维护
 grepom prune                        # 删除配置中不存在的已克隆仓库
@@ -230,6 +235,15 @@ grepom sync   # 使用解析后的 token 值
 |------|------|--------|------|
 | `--config` | `-c` | 自动查找 | 配置文件路径（默认从当前目录向上查找 `.grepom.yml`） |
 | `--verbose` | `-v` | `false` | 启用详细输出 |
+
+### 服务状态目录
+
+服务 registry 和日志存放在 XDG 状态目录下：
+
+- 已设置 `XDG_STATE_HOME` 时：`$XDG_STATE_HOME/grepom/services/<scope>/`
+- 未设置时：`~/.local/state/grepom/services/<scope>/`
+
+升级后不会自动迁移旧版 `Application Support`（macOS）或 `UserConfigDir` 路径下的数据。若 `grepom svc list` 显示为空，请对旧服务执行 `kill`/`clean` 后重新 `run`。
 
 ## 构建
 

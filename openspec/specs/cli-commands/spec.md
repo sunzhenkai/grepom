@@ -360,3 +360,14 @@ The system SHALL provide a `grepom add` command with three subcommands:
 - **WHEN** 用户查看任一支持 `--vgroup` 的命令帮助
 - **THEN** 系统 SHALL 展示长参数 `--vgroup`，不要求提供短参数别名
 
+### Requirement: completion command
+The system SHALL provide a `grepom completion` subcommand as part of the root command set.
+
+#### Scenario: completion listed in help
+- **WHEN** the user runs `grepom --help`
+- **THEN** the system SHALL list `completion` among available subcommands
+
+#### Scenario: completion help in English
+- **WHEN** the user runs `grepom completion --help`
+- **THEN** the command description and examples SHALL be in English
+
