@@ -41,6 +41,7 @@ type Config struct {
 	Resources      map[string]Resource `yaml:"resources"`
 	Groups         []Group             `yaml:"groups"`
 	Repos          []Repo              `yaml:"repos"`
+	Services       map[string]ServiceDef `yaml:"services,omitempty"`
 	YAMLIndent     int                 `yaml:"yaml_indent,omitempty"`
 	rawTokens      map[string]string   // resource name → original token string (with ${...} placeholders)
 	rawGroupTokens map[int]string      // group index → original group token string
@@ -156,6 +157,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Repos == nil {
 		cfg.Repos = []Repo{}
+	}
+	if cfg.Services == nil {
+		cfg.Services = make(map[string]ServiceDef)
 	}
 
 	// Save raw token values for write-back preservation.

@@ -15,6 +15,7 @@ Git Repository Orchestrator & Manager — manage multiple git repositories acros
 - **Push guard** — automatically detect secrets before pushing
 - **Interactive mode** — menu-driven interactive UI
 - **MR/PR creation** — create GitHub Pull Requests or GitLab Merge Requests from the CLI; returns existing MR/PR address if one is already open
+- **Service process management** — start local dev services in the background, inspect status/logs, stop processes, and manage them via TUI
 
 ## Install
 
@@ -74,6 +75,16 @@ repos:                             # standalone repos (not part of any group)
   - name: dotfiles
     resource: my-github
     url: https://github.com/me/dotfiles.git
+
+services:                          # optional local development service definitions
+  api:
+    cwd: ./backend
+    command: make dev
+  web:
+    cwd: ./frontend
+    command:
+      - pnpm
+      - dev
 ```
 
 ### Commands
@@ -152,6 +163,20 @@ grepom watch --id 1234              # Watch a specific pipeline by ID
 grepom pipeline list <repo-name>    # List pipelines for a repo
 grepom pipeline watch <repo-name>   # Watch pipeline status in real-time
 grepom tag -w                       # Create version tag, then watch pipeline status
+
+# Service process management
+grepom svc run -- make dev         # Start a service in the current directory (default name = dirname)
+grepom svc run api                  # Start configured service from .grepom.yml
+grepom svc list                     # Table of name, status, PID, path, command, and log path
+grepom svc status api               # Show one service status
+grepom svc logs -f api              # Follow service logs
+grepom svc logs --open api          # Open log file in editor
+grepom svc kill api                 # Stop a service
+grepom svc kill -9 api              # Force stop a service
+grepom svc clean                    # Remove records for exited services
+grepom svc dir api                  # Print service working directory
+grepom svc tui                      # Open interactive service management UI
+eval "$(grepom svc --shell)"        # Enable gsvc helper for cd to service directories
 
 # Maintenance
 grepom prune                        # Remove cloned repos not in config

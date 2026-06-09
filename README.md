@@ -15,6 +15,7 @@ Git 仓库编排器与管理器 — 通过单个 YAML 配置文件管理 GitLab 
 - **推送保护** — 推送前自动检测敏感信息，防止泄露
 - **交互式模式** — 菜单驱动的交互式操作界面
 - **MR/PR 创建** — 在 CLI 中直接创建 GitHub Pull Request 或 GitLab Merge Request，已有 MR/PR 时自动返回地址
+- **服务进程管理** — 后台启动本地开发服务，查看状态、日志、停止进程，并提供 TUI 管理界面
 
 ## 安装
 
@@ -74,6 +75,16 @@ repos:                             # 独立仓库（不属于任何组）
   - name: dotfiles
     resource: my-github
     url: https://github.com/me/dotfiles.git
+
+services:                          # 可选：本地开发服务定义
+  api:
+    cwd: ./backend
+    command: make dev
+  web:
+    cwd: ./frontend
+    command:
+      - pnpm
+      - dev
 ```
 
 ### 命令
@@ -152,6 +163,20 @@ grepom watch --id 1234              # 监控指定管道 ID
 grepom pipeline list <repo-name>    # 列出仓库的管道
 grepom pipeline watch <repo-name>   # 实时监控管道状态
 grepom tag -w                       # 创建版本标签后自动监控管道状态
+
+# 服务进程管理
+grepom svc run -- make dev         # 在当前目录后台启动服务（默认服务名为目录名）
+grepom svc run api                  # 从 .grepom.yml 读取 api 服务定义并启动
+grepom svc list                     # 表格展示服务名、状态、PID、路径、命令和日志路径
+grepom svc status api               # 查看单个服务状态
+grepom svc logs -f api              # 持续查看服务日志
+grepom svc logs --open api          # 用编辑器打开日志文件
+grepom svc kill api                 # 停止服务
+grepom svc kill -9 api              # 强制停止服务
+grepom svc clean                    # 清理已退出服务的记录
+grepom svc dir api                  # 输出服务工作目录
+grepom svc tui                      # 打开 TUI 管理界面
+eval "$(grepom svc --shell)"        # 启用 gsvc 快捷跳转服务目录
 
 # 维护
 grepom prune                        # 删除配置中不存在的已克隆仓库

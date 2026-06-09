@@ -67,6 +67,17 @@ repos:
   - name: internal-tool
     resource: my-git
     url: https://git.internal.com/tools/internal-tool.git
+
+# services: optional local development service definitions
+services:
+  api:
+    cwd: ./backend
+    command: make dev
+  web:
+    cwd: ./frontend
+    command:
+      - pnpm
+      - dev
 `
 
 var outputFile string
