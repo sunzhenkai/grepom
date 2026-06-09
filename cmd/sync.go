@@ -13,6 +13,7 @@ import (
 
 var (
 	syncGroup    string
+	syncVGroup   string
 	syncResource string
 )
 
@@ -41,10 +42,15 @@ Only new repos are added to the config; existing entries are never removed.`,
 			configPath = defaultConfigPath()
 		}
 
+		groupSelection, err := cfg.ResolveGroupSelection(syncGroup, syncVGroup)
+		if err != nil {
+			return err
+		}
+
 		// Determine which groups to process
 		var groupsToProcess []config.Group
 		for _, g := range cfg.Groups {
-			if syncGroup != "" && g.Name != syncGroup {
+			if !cfg.GroupInSelection(g.Name, groupSelection) {
 				continue
 			}
 			if syncResource != "" && g.Resource != syncResource {
@@ -185,6 +191,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 
 func init() {
 	syncCmd.Flags().StringVarP(&syncGroup, "group", "g", "", "sync a specific group by name")
+	syncCmd.Flags().StringVar(&syncVGroup, "vgroup", "", "sync groups in a virtual group")
 	syncCmd.Flags().StringVarP(&syncResource, "resource", "R", "", "sync all groups using a specific resource")
 	rootCmd.AddCommand(syncCmd)
 }

@@ -12,6 +12,7 @@ import (
 
 var (
 	searchGroup    string
+	searchVGroup   string
 	searchResource string
 )
 
@@ -37,9 +38,9 @@ var searchCmd = &cobra.Command{
 			return err
 		}
 
-		filter := repo.Filter{
-			Group:    searchGroup,
-			Resource: searchResource,
+		filter, err := buildRepoFilter(cfg, searchGroup, searchVGroup, searchResource, false)
+		if err != nil {
+			return err
 		}
 		results := repo.ApplySearchFilter(allRepos, keyword, filter)
 
@@ -67,6 +68,7 @@ var searchCmd = &cobra.Command{
 
 func init() {
 	searchCmd.Flags().StringVarP(&searchGroup, "group", "g", "", "filter by group name")
+	searchCmd.Flags().StringVar(&searchVGroup, "vgroup", "", "filter by virtual group name")
 	searchCmd.Flags().StringVarP(&searchResource, "resource", "R", "", "filter by resource name")
 	rootCmd.AddCommand(searchCmd)
 }

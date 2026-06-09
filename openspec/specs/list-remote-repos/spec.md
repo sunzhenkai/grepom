@@ -1,3 +1,7 @@
+## Purpose
+
+定义 `grepom list --remote` 通过 provider API 查询远程仓库的行为。
+## Requirements
 ### Requirement: list --remote 远程仓库查询
 `list` 命令 SHALL 支持 `--remote` 标志，当使用 `--remote` 时（默认 `--type repos`），系统通过 provider API 实时查询远程仓库列表并以表格形式展示。`list --remote` SHALL 通过 `Resource.ResolvedToken()` 获取已解析的 token 用于 provider API 认证，不再直接读取 `Resource.Token` 字段。
 
@@ -62,3 +66,23 @@
 #### Scenario: Codeup provider 使用 Groups 模式查询
 - **WHEN** 用户运行 `grepom list --remote`，group 的 resource provider 为 `codeup`
 - **THEN** 系统使用 Groups 查询模式（与 GitLab 一致），通过 `ListRepos` 全量拉取并按代码组路径过滤
+
+### Requirement: list --remote 支持 --vgroup
+`list --remote` 在默认 repos 模式下 SHALL 支持 `--vgroup` 标志，通过虚拟分组选择需要查询远程仓库的真实 groups。`--group` 与 `--vgroup` 同时指定时，系统 SHALL 对真实 group 集合取并集；随后继续应用 `--resource`、`--all`、禁用状态和 `exclude_repos` 等既有规则。
+
+#### Scenario: 远程查询虚拟分组
+- **WHEN** 用户运行 `grepom list --remote --vgroup work`，虚拟分组 `work` 包含真实 groups `frontend` 和 `backend`
+- **THEN** 系统 SHALL 仅查询真实 groups `frontend` 和 `backend` 关联的远程仓库并展示
+
+#### Scenario: list --remote --group 与 --vgroup 取并集
+- **WHEN** 用户运行 `grepom list --remote --group infra --vgroup work`
+- **THEN** 系统 SHALL 查询真实 group `infra` 以及虚拟分组 `work` 包含的真实 groups 关联的远程仓库
+
+#### Scenario: list --remote --vgroup 与 --resource 组合
+- **WHEN** 用户运行 `grepom list --remote --vgroup work --resource work-gl`
+- **THEN** 系统 SHALL 仅查询虚拟分组 `work` 中引用 resource `work-gl` 的真实 groups
+
+#### Scenario: list --remote 指定不存在的虚拟分组
+- **WHEN** 用户运行 `grepom list --remote --vgroup missing`
+- **THEN** 系统 SHALL 报错提示虚拟分组 `missing` 不存在，不执行远程查询
+

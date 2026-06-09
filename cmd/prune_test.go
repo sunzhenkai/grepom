@@ -68,6 +68,7 @@ func TestPruneCommand_DryRun(t *testing.T) {
 	pruneApply = false
 	pruneForce = false
 	pruneGroup = ""
+	pruneVGroup = ""
 	pruneResource = ""
 
 	err := pruneCmd.RunE(pruneCmd, []string{})
@@ -90,6 +91,7 @@ func TestPruneCommand_ApplyDeletesClean(t *testing.T) {
 	pruneApply = true
 	pruneForce = true
 	pruneGroup = ""
+	pruneVGroup = ""
 	pruneResource = ""
 
 	err := pruneCmd.RunE(pruneCmd, []string{})
@@ -129,6 +131,7 @@ groups:
 	pruneApply = false
 	pruneForce = false
 	pruneGroup = ""
+	pruneVGroup = ""
 	pruneResource = ""
 
 	err := pruneCmd.RunE(pruneCmd, []string{})
@@ -147,6 +150,7 @@ func TestPruneCommand_GroupFilter(t *testing.T) {
 	pruneApply = true
 	pruneForce = true
 	pruneGroup = "frontend"
+	pruneVGroup = ""
 	pruneResource = ""
 
 	err := pruneCmd.RunE(pruneCmd, []string{})
@@ -173,6 +177,7 @@ func TestPruneCommand_NotCloned(t *testing.T) {
 	pruneApply = true
 	pruneForce = false
 	pruneGroup = ""
+	pruneVGroup = ""
 	pruneResource = ""
 
 	err := pruneCmd.RunE(pruneCmd, []string{})

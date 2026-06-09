@@ -56,6 +56,16 @@ groups:
     path: my-github-org
     recursive: false
 
+# virtual_groups: named collections of real groups for batch operations via --vgroup
+virtual_groups:
+  work:
+    groups:
+      - frontend
+      - my-org
+  personal:
+    groups:
+      - my-org
+
 # repos: explicitly declared standalone repos (not part of any group)
 repos:
   - name: dotfiles

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -16,6 +17,7 @@ import (
 
 var (
 	listGroup    string
+	listVGroup   string
 	listResource string
 	listType     string
 	listRemote   bool
@@ -88,6 +90,7 @@ E.g. "grepom list groups" is equivalent to "grepom list --type groups".`,
 
 func init() {
 	listCmd.Flags().StringVarP(&listGroup, "group", "g", "", "filter by group name")
+	listCmd.Flags().StringVar(&listVGroup, "vgroup", "", "filter by virtual group name")
 	listCmd.Flags().StringVarP(&listResource, "resource", "R", "", "filter by resource name")
 	listCmd.Flags().StringVarP(&listType, "type", "t", "repos", "type to list: repos, resources, groups")
 	listCmd.Flags().BoolVarP(&listRemote, "remote", "r", false, "list remote repos from provider API instead of local config")
@@ -98,10 +101,9 @@ func init() {
 }
 
 func runListRepos(cfg *config.Config, args []string) error {
-	filter := repo.Filter{
-		Group:           listGroup,
-		Resource:        listResource,
-		IncludeDisabled: listAll,
+	filter, err := buildRepoFilter(cfg, listGroup, listVGroup, listResource, listAll)
+	if err != nil {
+		return err
 	}
 	// 位置参数：当为 groups/resources 时已被 RunE 处理，此处仅处理仓库名过滤
 	if len(args) > 0 && args[0] != "groups" && args[0] != "resources" {
@@ -219,13 +221,13 @@ func runListResources(cfg *config.Config) error {
 }
 
 func runListGroups(cfg *config.Config) error {
-	if len(cfg.Groups) == 0 {
+	if len(cfg.Groups) == 0 && len(cfg.VirtualGroups) == 0 {
 		fmt.Println("No groups found.")
 		return nil
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tRESOURCE\tPATH\tLOCAL_PATH\tRECURSIVE\tREPOS")
+	fmt.Fprintln(w, "TYPE\tNAME\tRESOURCE\tPATH\tLOCAL_PATH\tRECURSIVE\tREPOS\tGROUPS")
 
 	for _, g := range cfg.Groups {
 		recursive := "no"
@@ -236,7 +238,30 @@ func runListGroups(cfg *config.Config) error {
 		if localPath == "" {
 			localPath = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\n", g.Name, g.Resource, g.Path, localPath, recursive, len(g.Repos))
+		resource := g.Resource
+		if resource == "" {
+			resource = "-"
+		}
+		path := g.Path
+		if path == "" {
+			path = "-"
+		}
+		fmt.Fprintf(w, "group\t%s\t%s\t%s\t%s\t%s\t%d\t-\n", g.Name, resource, path, localPath, recursive, len(g.Repos))
+	}
+
+	vnames := make([]string, 0, len(cfg.VirtualGroups))
+	for name := range cfg.VirtualGroups {
+		vnames = append(vnames, name)
+	}
+	sort.Strings(vnames)
+	for _, name := range vnames {
+		vg := cfg.VirtualGroups[name]
+		members := strings.Join(vg.Groups, ",")
+		if members == "" {
+			members = "-"
+		}
+		repoCount := cfg.CountMemberRepos(vg.Groups)
+		fmt.Fprintf(w, "vgroup\t%s\t-\t-\t-\t-\t%d\t%s\n", name, repoCount, members)
 	}
 	w.Flush()
 
@@ -245,6 +270,11 @@ func runListGroups(cfg *config.Config) error {
 
 // runListRemoteRepos 通过 provider API 实时查询远程仓库列表并展示
 func runListRemoteRepos(cfg *config.Config) error {
+	groupSelection, err := cfg.ResolveGroupSelection(listGroup, listVGroup)
+	if err != nil {
+		return err
+	}
+
 	// 收集需要查询的 groups
 	type groupInfo struct {
 		group      config.Group
@@ -252,7 +282,7 @@ func runListRemoteRepos(cfg *config.Config) error {
 	}
 	var groupsToProcess []groupInfo
 	for _, g := range cfg.Groups {
-		if listGroup != "" && g.Name != listGroup {
+		if !cfg.GroupInSelection(g.Name, groupSelection) {
 			continue
 		}
 		if listResource != "" && g.Resource != listResource {

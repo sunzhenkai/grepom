@@ -11,6 +11,7 @@ import (
 
 var (
 	dedupGroup     string
+	dedupVGroup    string
 	dedupReference string
 	dedupApply     bool
 )
@@ -56,14 +57,15 @@ Use --apply to actually write changes.`,
 		}
 
 		// 确定要处理的 groups
-		var groupsToCheck []config.Group
-		if dedupGroup != "" {
-			_, g, err := cfg.FindGroup(dedupGroup)
-			if err != nil {
-				return err
-			}
-			groupsToCheck = append(groupsToCheck, *g)
-		} else {
+		groupSelection, err := cfg.ResolveGroupSelection(dedupGroup, dedupVGroup)
+		if err != nil {
+			return err
+		}
+		groupsToCheck, err := cfg.FilterGroups(dedupGroup, dedupVGroup)
+		if err != nil {
+			return err
+		}
+		if len(groupSelection) == 0 {
 			groupsToCheck = cfg.Groups
 		}
 
@@ -76,7 +78,7 @@ Use --apply to actually write changes.`,
 		// ═══════════════════════════════════════════
 		// Step 2: 跨组 URL 警告
 		// ═══════════════════════════════════════════
-		crossDups := detectCrossGroupDups(cfg.Groups, dedupGroup)
+		crossDups := detectCrossGroupDups(cfg.Groups, groupSelection)
 		printCrossGroupDups(crossDups)
 
 		// ═══════════════════════════════════════════
@@ -177,7 +179,7 @@ func printIntraGroupDups(dups []intraDup, groups []config.Group) {
 }
 
 // detectCrossGroupDups 检测跨组 URL 重复
-func detectCrossGroupDups(allGroups []config.Group, filterGroup string) []crossDup {
+func detectCrossGroupDups(allGroups []config.Group, filterGroups []string) []crossDup {
 	// 构建 url → group names 映射
 	urlToGroups := make(map[string][]string)
 	urlToOriginal := make(map[string]string) // normalized → original URL (取第一个)
@@ -209,12 +211,17 @@ func detectCrossGroupDups(allGroups []config.Group, filterGroup string) []crossD
 		if len(groups) <= 1 {
 			continue
 		}
-		// 如果指定了 filterGroup，只报告涉及该 group 的跨组重复
-		if filterGroup != "" {
+		// 如果指定了 filterGroups，只报告涉及这些 groups 的跨组重复
+		if len(filterGroups) > 0 {
 			found := false
 			for _, g := range groups {
-				if g == filterGroup {
-					found = true
+				for _, fg := range filterGroups {
+					if g == fg {
+						found = true
+						break
+					}
+				}
+				if found {
 					break
 				}
 			}
@@ -344,6 +351,7 @@ func refGroupNames(groups []config.Group) string {
 
 func init() {
 	dedupCmd.Flags().StringVarP(&dedupGroup, "group", "g", "", "target group to check (optional, defaults to all groups)")
+	dedupCmd.Flags().StringVar(&dedupVGroup, "vgroup", "", "virtual group to check (optional)")
 	dedupCmd.Flags().StringVarP(&dedupReference, "reference", "r", "", "reference group(s), comma-separated (triggers cross-group name dedup with --group)")
 	dedupCmd.Flags().BoolVar(&dedupApply, "apply", false, "apply changes (default is dry-run)")
 	rootCmd.AddCommand(dedupCmd)

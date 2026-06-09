@@ -17,6 +17,7 @@ import (
 
 var (
 	scanGroup       string
+	scanVGroup      string
 	scanResource    string
 	scanHistory     bool
 	scanFormat      string
@@ -50,6 +51,7 @@ When no config file exists in the current directory, scans the current directory
 
 func init() {
 	scanCmd.Flags().StringVarP(&scanGroup, "group", "g", "", "filter by group name")
+	scanCmd.Flags().StringVar(&scanVGroup, "vgroup", "", "filter by virtual group name")
 	scanCmd.Flags().StringVarP(&scanResource, "resource", "R", "", "filter by resource name")
 	scanCmd.Flags().BoolVar(&scanHistory, "history", false, "scan git history (including deleted commits)")
 	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "table", "output format: table, json")
@@ -120,9 +122,9 @@ func runScanWithConfig(args []string) error {
 	_ = absPath
 
 	// 解析 repo 列表
-	filter := repo.Filter{
-		Group:    scanGroup,
-		Resource: scanResource,
+	filter, err := buildRepoFilter(cfg, scanGroup, scanVGroup, scanResource, false)
+	if err != nil {
+		return err
 	}
 	if len(args) > 0 {
 		filter.Name = args[0]

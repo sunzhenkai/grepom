@@ -151,6 +151,60 @@ func TestResolveAndFilter_ByGroup(t *testing.T) {
 	}
 }
 
+func TestResolveAndFilter_ByMultipleGroups(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+				},
+			},
+			{
+				Name: "backend", Resource: "gl", Path: "org/backend", LocalPath: "./backend",
+				Repos: []config.GroupRepo{
+					{Name: "api", URL: "https://gitlab.com/org/backend/api.git", Path: "org/backend/api"},
+				},
+			},
+			{
+				Name: "infra", Resource: "gl", Path: "org/infra", LocalPath: "./infra",
+				Repos: []config.GroupRepo{
+					{Name: "ops", URL: "https://gitlab.com/org/infra/ops.git", Path: "org/infra/ops"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.ResolveAndFilter(Filter{Groups: []string{"frontend", "backend"}})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos, got %d", len(repos))
+	}
+}
+
+func TestApplyFilter_ByMultipleGroupsWithResource(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "app", GroupName: "frontend", Resource: "gl"},
+		{Name: "api", GroupName: "backend", Resource: "gl"},
+		{Name: "tool", GroupName: "oss", Resource: "ghub"},
+	}
+
+	filtered := ApplyFilter(repos, Filter{
+		Groups:   []string{"frontend", "backend"},
+		Resource: "gl",
+	})
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 repos, got %d", len(filtered))
+	}
+}
+
 func TestResolveAndFilter_ByResource(t *testing.T) {
 	cfg := &config.Config{
 		Base: "/home/user/projects",

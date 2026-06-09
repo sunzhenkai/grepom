@@ -12,9 +12,25 @@ import (
 // Filter defines criteria for filtering repos.
 type Filter struct {
 	Name            string
-	Group           string // group name
-	Resource        string // resource name
-	IncludeDisabled bool   // when true, include disabled/excluded repos in results
+	Group           string   // single group name (backward compatible)
+	Groups          []string // multiple group names
+	Resource        string   // resource name
+	IncludeDisabled bool     // when true, include disabled/excluded repos in results
+}
+
+func matchesGroupFilter(groupName string, filter Filter) bool {
+	if len(filter.Groups) > 0 {
+		for _, g := range filter.Groups {
+			if g == groupName {
+				return true
+			}
+		}
+		return false
+	}
+	if filter.Group != "" {
+		return groupName == filter.Group
+	}
+	return true
 }
 
 // Resolver builds a list of provider.Repo from the config.
@@ -277,7 +293,7 @@ func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 		if filter.Name != "" && r.Name != filter.Name {
 			continue
 		}
-		if filter.Group != "" && r.GroupName != filter.Group {
+		if !matchesGroupFilter(r.GroupName, filter) {
 			continue
 		}
 		if filter.Resource != "" && r.Resource != filter.Resource {
@@ -299,7 +315,7 @@ func ApplyExactFirstSearch(repos []provider.Repo, keyword string, filter Filter)
 	var exact []provider.Repo
 	for _, r := range repos {
 		if strings.ToLower(r.Name) == lower {
-			if filter.Group != "" && r.GroupName != filter.Group {
+			if !matchesGroupFilter(r.GroupName, filter) {
 				continue
 			}
 			if filter.Resource != "" && r.Resource != filter.Resource {
@@ -326,7 +342,7 @@ func ApplySearchFilter(repos []provider.Repo, keyword string, filter Filter) []p
 		if keyword != "" && !strings.Contains(strings.ToLower(r.Name), keyword) {
 			continue
 		}
-		if filter.Group != "" && r.GroupName != filter.Group {
+		if !matchesGroupFilter(r.GroupName, filter) {
 			continue
 		}
 		if filter.Resource != "" && r.Resource != filter.Resource {

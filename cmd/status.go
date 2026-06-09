@@ -12,6 +12,7 @@ import (
 
 var (
 	statusGroup    string
+	statusVGroup   string
 	statusResource string
 )
 
@@ -29,9 +30,9 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		filter := repo.Filter{
-			Group:    statusGroup,
-			Resource: statusResource,
+		filter, err := buildRepoFilter(cfg, statusGroup, statusVGroup, statusResource, false)
+		if err != nil {
+			return err
 		}
 		if len(args) > 0 {
 			filter.Name = args[0]
@@ -155,6 +156,7 @@ var statusCmd = &cobra.Command{
 
 func init() {
 	statusCmd.Flags().StringVarP(&statusGroup, "group", "g", "", "filter by group name")
+	statusCmd.Flags().StringVar(&statusVGroup, "vgroup", "", "filter by virtual group name")
 	statusCmd.Flags().StringVarP(&statusResource, "resource", "R", "", "filter by resource name")
 	rootCmd.AddCommand(statusCmd)
 }

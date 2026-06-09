@@ -10,7 +10,8 @@ Git Repository Orchestrator & Manager — manage multiple git repositories acros
 - **Bulk operations** — clone, pull, and check status across all repos at once
 - **Hierarchical layout** — preserves group/subgroup directory structure locally
 - **Multi-provider** — works with GitLab, GitHub, Codeup, and Generic APIs
-- **Flexible filtering** — filter by name, group, or provider
+- **Flexible filtering** — filter by name, group, virtual group, or provider
+- **Virtual groups** — organize multiple real groups into named sets for batch operations via `--vgroup`
 - **Secret scanning** — built-in gitleaks engine with workspace and git history scanning
 - **Push guard** — automatically detect secrets before pushing
 - **Interactive mode** — menu-driven interactive UI
@@ -71,6 +72,12 @@ groups:
     resource: my-github
     path: my-github-org
 
+virtual_groups:                    # optional: named collections of real groups
+  work:
+    groups:
+      - frontend
+      - my-org
+
 repos:                             # standalone repos (not part of any group)
   - name: dotfiles
     resource: my-github
@@ -99,15 +106,18 @@ grepom interactive                  # Start interactive mode
 grepom sync                         # Discover repos and update config metadata
 grepom sync --source my-gitlab      # Sync a specific resource by name
 grepom sync --group frontend        # Sync a specific group
+grepom sync --vgroup work           # Sync all real groups in a virtual group
 
 # Clone & Pull
 grepom clone                        # Clone all discovered repos
 grepom clone web-app                # Clone a specific repo
 grepom clone --group frontend       # Clone all repos in a group
+grepom clone --vgroup work          # Clone all repos in a virtual group
 grepom clone --concurrency 8        # Clone with 8 parallel workers
 
 grepom pull                         # Pull updates for all cloned repos
 grepom pull web-app                 # Pull a specific repo
+grepom pull --vgroup work           # Pull all repos in a virtual group
 grepom pull --force                 # Skip safety checks and force pull
 grepom pull --concurrency 8         # Pull with 8 parallel workers
 
@@ -116,18 +126,23 @@ grepom list                         # List repos needing attention (unpushed/unc
 grepom list --all                   # List all repos with status
 grepom list --no-push               # Only show repos with unpushed commits
 grepom list --no-commit             # Only show repos with uncommitted changes
-grepom list --group frontend        # Filter by group
-grepom list --resource my-gitlab    # Filter by resource
-grepom list groups                  # List configured groups
+grepom list --group frontend        # Filter by real group
+grepom list --vgroup work           # Filter by virtual group (expands to real groups)
+grepom list --group infra --vgroup work  # --group and --vgroup are unioned
+grepom list --resource my-gitlab    # Filter by resource (intersects with group selection)
+grepom list groups                  # List configured real groups and virtual groups
 grepom list resources               # List configured resources
 grepom list --remote                # List remote repos from provider API
+grepom list --remote --vgroup work  # Query remote repos for all real groups in a virtual group
 grepom list --remote --type groups  # List remote groups from provider API
 
 grepom status                       # Check status of all cloned repos
 grepom status web-app               # Status of a specific repo
+grepom status --vgroup work         # Status for all real groups in a virtual group
 
 grepom search web                   # Search repos by name (substring match)
 grepom search web --group frontend  # Search within a specific group
+grepom search web --vgroup work     # Search within all real groups in a virtual group
 
 grepom dir                          # Print base directory path
 grepom dir web-app                  # Print a repo's local path
@@ -138,6 +153,7 @@ cd "$(grepom dir web-app)"          # Quickly jump to a repo directory
 grepom scan                         # Scan workspace of all cloned repos
 grepom scan -p /path/to/project     # Scan a specific directory directly (no config needed)
 grepom scan --group frontend        # Scan only the frontend group
+grepom scan --vgroup work           # Scan only real groups in a virtual group
 grepom scan --history               # Scan workspace + git history
 grepom scan --format json           # Output in JSON format
 grepom scan --output results.txt    # Write results to file
@@ -180,8 +196,10 @@ eval "$(grepom svc --shell)"        # Enable gsvc helper for cd to service direc
 
 # Maintenance
 grepom prune                        # Remove cloned repos not in config
+grepom prune --vgroup work          # Prune only real groups in a virtual group
 grepom dedup                        # Check all groups for intra-group dupes and cross-group warnings
 grepom dedup --group core-team      # Check only core-team group
+grepom dedup --vgroup work          # Check only real groups in a virtual group
 grepom dedup --group core-team --reference infra-team  # Also exclude by name against infra-team
 grepom dedup --apply                # Apply changes
 

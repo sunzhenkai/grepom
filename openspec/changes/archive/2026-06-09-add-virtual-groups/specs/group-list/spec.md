@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-定义 `grepom list groups` 对真实 group 与虚拟分组的列表展示行为。
-## Requirements
 ### Requirement: list groups 命令
 系统 SHALL 提供 `grepom list --type groups` 命令，列出所有已配置的真实 group 和虚拟分组。输出以表格形式显示 TYPE、NAME、RESOURCE、PATH、LOCAL_PATH、RECURSIVE、REPOS、GROUPS 列。真实 group 行的 TYPE 为 `group`，GROUPS 列显示 `-`；虚拟分组行的 TYPE 为 `vgroup`，RESOURCE、PATH、LOCAL_PATH、RECURSIVE 列显示 `-`，GROUPS 列显示成员真实 group 名称列表，REPOS 列显示成员真实 groups 的 repo 总数。
 
@@ -56,4 +54,3 @@
 #### Scenario: 远程列出 groups 无结果
 - **WHEN** 用户运行 `grepom list --remote --type groups` 且所有 resource 查询无结果
 - **THEN** 系统输出 `No remote groups found.`
-

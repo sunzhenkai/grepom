@@ -40,6 +40,7 @@ type Config struct {
 	Base           string              `yaml:"base"`
 	Resources      map[string]Resource `yaml:"resources"`
 	Groups         []Group             `yaml:"groups"`
+	VirtualGroups  map[string]VirtualGroup `yaml:"virtual_groups,omitempty"`
 	Repos          []Repo              `yaml:"repos"`
 	Services       map[string]ServiceDef `yaml:"services,omitempty"`
 	YAMLIndent     int                 `yaml:"yaml_indent,omitempty"`
@@ -160,6 +161,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Services == nil {
 		cfg.Services = make(map[string]ServiceDef)
+	}
+	if cfg.VirtualGroups == nil {
+		cfg.VirtualGroups = make(map[string]VirtualGroup)
 	}
 
 	// Save raw token values for write-back preservation.
@@ -370,6 +374,15 @@ func (c *Config) validate() error {
 				if r.Path != "" && !strings.HasPrefix(r.Path, g.Path) {
 					return fmt.Errorf("config: group %q: repo[%d] path %q does not start with group path %q", g.Name, j, r.Path, g.Path)
 				}
+			}
+		}
+	}
+
+	// Validate virtual groups reference existing real groups
+	for vname, vg := range c.VirtualGroups {
+		for i, member := range vg.Groups {
+			if !groupNames[member] {
+				return fmt.Errorf("config: virtual_groups[%q]: groups[%d]: group %q not found", vname, i, member)
 			}
 		}
 	}

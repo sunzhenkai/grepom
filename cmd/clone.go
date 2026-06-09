@@ -11,6 +11,7 @@ import (
 
 var (
 	cloneGroup       string
+	cloneVGroup      string
 	cloneResource    string
 	cloneConcurrency int
 )
@@ -36,7 +37,10 @@ var cloneCmd = &cobra.Command{
 			return err
 		}
 
-		filter := repo.Filter{Group: cloneGroup, Resource: cloneResource}
+		filter, err := buildRepoFilter(cfg, cloneGroup, cloneVGroup, cloneResource, false)
+		if err != nil {
+			return err
+		}
 		if len(args) > 0 {
 			filter.Name = args[0]
 		}
@@ -121,6 +125,7 @@ func runSequentialClone(tasks []gitpkg.CloneTask) error {
 
 func init() {
 	cloneCmd.Flags().StringVarP(&cloneGroup, "group", "g", "", "clone all repos under a group")
+	cloneCmd.Flags().StringVar(&cloneVGroup, "vgroup", "", "clone all repos under a virtual group")
 	cloneCmd.Flags().StringVarP(&cloneResource, "resource", "R", "", "clone all repos from a resource")
 	cloneCmd.Flags().IntVarP(&cloneConcurrency, "concurrency", "j", 4, "number of parallel clone workers")
 	rootCmd.AddCommand(cloneCmd)

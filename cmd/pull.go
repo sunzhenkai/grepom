@@ -13,6 +13,7 @@ import (
 
 var (
 	pullGroup       string
+	pullVGroup      string
 	pullResource    string
 	pullConcurrency int
 	pullForce       bool
@@ -39,9 +40,9 @@ on their default branch and have a clean working tree. Use --force to skip safet
 			return err
 		}
 
-		filter := repo.Filter{
-			Group:    pullGroup,
-			Resource: pullResource,
+		filter, err := buildRepoFilter(cfg, pullGroup, pullVGroup, pullResource, false)
+		if err != nil {
+			return err
 		}
 		if len(args) > 0 {
 			filter.Name = args[0]
@@ -180,6 +181,7 @@ func runSequentialPull(tasks []gitpkg.PullTask, skipped int) error {
 
 func init() {
 	pullCmd.Flags().StringVarP(&pullGroup, "group", "g", "", "filter by group name")
+	pullCmd.Flags().StringVar(&pullVGroup, "vgroup", "", "filter by virtual group name")
 	pullCmd.Flags().StringVarP(&pullResource, "resource", "R", "", "filter by resource name")
 	pullCmd.Flags().IntVarP(&pullConcurrency, "concurrency", "j", 4, "number of parallel pull workers")
 	pullCmd.Flags().BoolVarP(&pullForce, "force", "f", false, "skip safety checks, pull all cloned repos")
