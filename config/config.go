@@ -371,7 +371,7 @@ func (c *Config) validate() error {
 		// Validate group repos (only when group has a path)
 		if g.Path != "" {
 			for j, r := range g.Repos {
-				if r.Path != "" && !strings.HasPrefix(r.Path, g.Path) {
+				if !RepoPathMatchesGroup(r.Path, g.Path) {
 					return fmt.Errorf("config: group %q: repo[%d] path %q does not start with group path %q", g.Name, j, r.Path, g.Path)
 				}
 			}
@@ -405,6 +405,15 @@ func (c *Config) validate() error {
 	}
 
 	return nil
+}
+
+// RepoPathMatchesGroup reports whether repoPath belongs under groupPath.
+// Empty repoPath or groupPath is accepted (matches validation rules).
+func RepoPathMatchesGroup(repoPath, groupPath string) bool {
+	if groupPath == "" || repoPath == "" {
+		return true
+	}
+	return strings.HasPrefix(repoPath, groupPath)
 }
 
 // expandTilde expands ~/ to the user's home directory.
@@ -592,6 +601,10 @@ func SyncGroupRepos(configPath, groupName string, newRepos []GroupRepo) (int, er
 				continue // skip duplicate within batch
 			}
 			seen[nr.URL] = true
+
+			if !RepoPathMatchesGroup(nr.Path, group.Path) {
+				continue
+			}
 
 			found := false
 			for _, er := range group.Repos {

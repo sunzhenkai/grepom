@@ -51,7 +51,7 @@ When no config file exists in the current directory, scans the current directory
 
 func init() {
 	scanCmd.Flags().StringVarP(&scanGroup, "group", "g", "", "filter by group name")
-	scanCmd.Flags().StringVar(&scanVGroup, "vgroup", "", "filter by virtual group name")
+	scanCmd.Flags().StringVarP(&scanVGroup, "vgroup", "V", "", "filter by virtual group name")
 	scanCmd.Flags().StringVarP(&scanResource, "resource", "R", "", "filter by resource name")
 	scanCmd.Flags().BoolVar(&scanHistory, "history", false, "scan git history (including deleted commits)")
 	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "table", "output format: table, json")

@@ -153,7 +153,7 @@ Use --apply to actually delete. Use --force to skip safety checks for dirty/ahea
 
 func init() {
 	pruneCmd.Flags().StringVarP(&pruneGroup, "group", "g", "", "only prune repos in a specific group")
-	pruneCmd.Flags().StringVar(&pruneVGroup, "vgroup", "", "only prune repos in a virtual group")
+	pruneCmd.Flags().StringVarP(&pruneVGroup, "vgroup", "V", "", "only prune repos in a virtual group")
 	pruneCmd.Flags().StringVarP(&pruneResource, "resource", "R", "", "only prune repos from a specific resource")
 	pruneCmd.Flags().BoolVarP(&pruneForce, "force", "f", false, "skip safety checks (delete dirty/ahead repos)")
 	pruneCmd.Flags().BoolVar(&pruneApply, "apply", false, "actually delete files (default is dry-run)")

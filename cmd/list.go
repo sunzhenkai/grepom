@@ -90,7 +90,7 @@ E.g. "grepom list groups" is equivalent to "grepom list --type groups".`,
 
 func init() {
 	listCmd.Flags().StringVarP(&listGroup, "group", "g", "", "filter by group name")
-	listCmd.Flags().StringVar(&listVGroup, "vgroup", "", "filter by virtual group name")
+	listCmd.Flags().StringVarP(&listVGroup, "vgroup", "V", "", "filter by virtual group name")
 	listCmd.Flags().StringVarP(&listResource, "resource", "R", "", "filter by resource name")
 	listCmd.Flags().StringVarP(&listType, "type", "t", "repos", "type to list: repos, resources, groups")
 	listCmd.Flags().BoolVarP(&listRemote, "remote", "r", false, "list remote repos from provider API instead of local config")

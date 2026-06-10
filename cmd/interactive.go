@@ -698,6 +698,9 @@ func interactiveSync() {
 
 		var newGroupRepos []config.GroupRepo
 		for _, r := range repos {
+			if g.Path != "" && r.Path != "" && !config.RepoPathMatchesGroup(r.Path, g.Path) {
+				continue
+			}
 			newGroupRepos = append(newGroupRepos, config.GroupRepo{
 				Name: r.Name,
 				URL:  r.CloneURL,

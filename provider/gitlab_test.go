@@ -79,6 +79,49 @@ func TestGitLabProvider_ListRepos_Recursive(t *testing.T) {
 	}
 }
 
+func TestGitLabProvider_ListRepos_FiltersSharedProjects(t *testing.T) {
+	group := gitlabGroup{ID: 123, Path: "topon-bidder", FullPath: "topon-bidder"}
+	projects := []gitlabProject{
+		{Name: "ad-platform-wiki", PathWithNamespace: "topon-bidder/ad-platform/ad-platform-wiki", HTTPURLToRepo: "https://gitlab.com/topon-bidder/ad-platform/ad-platform-wiki.git"},
+		{Name: "Ai Coding", PathWithNamespace: "zhangfeixiang/ai-coding", HTTPURLToRepo: "https://gitlab.com/zhangfeixiang/ai-coding.git"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/groups/") && !strings.Contains(path, "/projects") && !strings.Contains(path, "/subgroups") {
+			json.NewEncoder(w).Encode(group)
+		} else if path == "/api/v4/groups/123/projects" {
+			json.NewEncoder(w).Encode(projects)
+		} else if path == "/api/v4/groups/123/subgroups" {
+			json.NewEncoder(w).Encode([]gitlabGroup{})
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+		Groups:    []GroupQuery{{Path: "topon-bidder", Recursive: true}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (shared project filtered), got %d", len(repos))
+	}
+	if repos[0].Name != "ad-platform-wiki" {
+		t.Errorf("expected ad-platform-wiki, got %q", repos[0].Name)
+	}
+}
+
 func TestGitLabProvider_NonRecursive(t *testing.T) {
 	group := gitlabGroup{ID: 123, Path: "frontend", FullPath: "my-org/frontend"}
 	projects := []gitlabProject{

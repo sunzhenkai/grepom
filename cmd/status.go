@@ -156,7 +156,7 @@ var statusCmd = &cobra.Command{
 
 func init() {
 	statusCmd.Flags().StringVarP(&statusGroup, "group", "g", "", "filter by group name")
-	statusCmd.Flags().StringVar(&statusVGroup, "vgroup", "", "filter by virtual group name")
+	statusCmd.Flags().StringVarP(&statusVGroup, "vgroup", "V", "", "filter by virtual group name")
 	statusCmd.Flags().StringVarP(&statusResource, "resource", "R", "", "filter by resource name")
 	rootCmd.AddCommand(statusCmd)
 }

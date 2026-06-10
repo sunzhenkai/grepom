@@ -181,7 +181,7 @@ func runSequentialPull(tasks []gitpkg.PullTask, skipped int) error {
 
 func init() {
 	pullCmd.Flags().StringVarP(&pullGroup, "group", "g", "", "filter by group name")
-	pullCmd.Flags().StringVar(&pullVGroup, "vgroup", "", "filter by virtual group name")
+	pullCmd.Flags().StringVarP(&pullVGroup, "vgroup", "V", "", "filter by virtual group name")
 	pullCmd.Flags().StringVarP(&pullResource, "resource", "R", "", "filter by resource name")
 	pullCmd.Flags().IntVarP(&pullConcurrency, "concurrency", "j", 4, "number of parallel pull workers")
 	pullCmd.Flags().BoolVarP(&pullForce, "force", "f", false, "skip safety checks, pull all cloned repos")

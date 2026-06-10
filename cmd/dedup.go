@@ -351,7 +351,7 @@ func refGroupNames(groups []config.Group) string {
 
 func init() {
 	dedupCmd.Flags().StringVarP(&dedupGroup, "group", "g", "", "target group to check (optional, defaults to all groups)")
-	dedupCmd.Flags().StringVar(&dedupVGroup, "vgroup", "", "virtual group to check (optional)")
+	dedupCmd.Flags().StringVarP(&dedupVGroup, "vgroup", "V", "", "virtual group to check (optional)")
 	dedupCmd.Flags().StringVarP(&dedupReference, "reference", "r", "", "reference group(s), comma-separated (triggers cross-group name dedup with --group)")
 	dedupCmd.Flags().BoolVar(&dedupApply, "apply", false, "apply changes (default is dry-run)")
 	rootCmd.AddCommand(dedupCmd)

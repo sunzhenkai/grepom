@@ -125,7 +125,7 @@ func runSequentialClone(tasks []gitpkg.CloneTask) error {
 
 func init() {
 	cloneCmd.Flags().StringVarP(&cloneGroup, "group", "g", "", "clone all repos under a group")
-	cloneCmd.Flags().StringVar(&cloneVGroup, "vgroup", "", "clone all repos under a virtual group")
+	cloneCmd.Flags().StringVarP(&cloneVGroup, "vgroup", "V", "", "clone all repos under a virtual group")
 	cloneCmd.Flags().StringVarP(&cloneResource, "resource", "R", "", "clone all repos from a resource")
 	cloneCmd.Flags().IntVarP(&cloneConcurrency, "concurrency", "j", 4, "number of parallel clone workers")
 	rootCmd.AddCommand(cloneCmd)

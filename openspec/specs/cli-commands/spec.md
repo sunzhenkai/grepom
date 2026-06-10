@@ -356,9 +356,9 @@ The system SHALL provide a `grepom add` command with three subcommands:
 - **WHEN** 用户运行 `grepom list --group infra --vgroup work`，虚拟分组 `work` 包含真实 groups `frontend` 和 `backend`
 - **THEN** 系统 SHALL 列出真实 groups `infra`、`frontend` 和 `backend` 下的仓库
 
-#### Scenario: --vgroup 短参数不存在
+#### Scenario: --vgroup 短参数
 - **WHEN** 用户查看任一支持 `--vgroup` 的命令帮助
-- **THEN** 系统 SHALL 展示长参数 `--vgroup`，不要求提供短参数别名
+- **THEN** 系统 SHALL 展示长参数 `--vgroup` 及其短参数别名 `-V`
 
 ### Requirement: completion command
 The system SHALL provide a `grepom completion` subcommand as part of the root command set.

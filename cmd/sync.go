@@ -140,6 +140,10 @@ Only new repos are added to the config; existing entries are never removed.`,
 			var newGroupRepos []config.GroupRepo
 			var excludedCount int
 			for _, r := range repos {
+				if g.Path != "" && r.Path != "" && !config.RepoPathMatchesGroup(r.Path, g.Path) {
+					config.Verbose("skipping repo %q: path does not match group path %q", r.Path, g.Path)
+					continue
+				}
 				if repo.IsExcluded(g.ExcludeRepos, r.Name, r.Path) {
 					excludedCount++
 					continue
@@ -191,7 +195,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 
 func init() {
 	syncCmd.Flags().StringVarP(&syncGroup, "group", "g", "", "sync a specific group by name")
-	syncCmd.Flags().StringVar(&syncVGroup, "vgroup", "", "sync groups in a virtual group")
+	syncCmd.Flags().StringVarP(&syncVGroup, "vgroup", "V", "", "sync groups in a virtual group")
 	syncCmd.Flags().StringVarP(&syncResource, "resource", "R", "", "sync all groups using a specific resource")
 	rootCmd.AddCommand(syncCmd)
 }

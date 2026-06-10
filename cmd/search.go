@@ -68,7 +68,7 @@ var searchCmd = &cobra.Command{
 
 func init() {
 	searchCmd.Flags().StringVarP(&searchGroup, "group", "g", "", "filter by group name")
-	searchCmd.Flags().StringVar(&searchVGroup, "vgroup", "", "filter by virtual group name")
+	searchCmd.Flags().StringVarP(&searchVGroup, "vgroup", "V", "", "filter by virtual group name")
 	searchCmd.Flags().StringVarP(&searchResource, "resource", "R", "", "filter by resource name")
 	rootCmd.AddCommand(searchCmd)
 }

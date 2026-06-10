@@ -103,6 +103,9 @@ func (g *GitLabProvider) listGroupRepos(ctx context.Context, params ListReposPar
 		}
 
 		for _, p := range projects {
+			if !pathUnderGroup(p.PathWithNamespace, groupPath) {
+				continue
+			}
 			allRepos = append(allRepos, Repo{
 				Name:     p.Name,
 				CloneURL: p.HTTPURLToRepo,
@@ -262,4 +265,11 @@ func parseNextPage(linkHeader string) (int, error) {
 	}
 
 	return 0, nil
+}
+
+func pathUnderGroup(repoPath, groupPath string) bool {
+	if groupPath == "" || repoPath == "" {
+		return true
+	}
+	return strings.HasPrefix(repoPath, groupPath)
 }

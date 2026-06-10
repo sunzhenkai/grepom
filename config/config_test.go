@@ -1262,6 +1262,69 @@ groups:
 	}
 }
 
+func TestRepoPathMatchesGroup(t *testing.T) {
+	tests := []struct {
+		repoPath  string
+		groupPath string
+		want      bool
+	}{
+		{"my-org/frontend/web-app", "my-org/frontend", true},
+		{"my-org/frontend", "my-org/frontend", true},
+		{"other-org/backend", "my-org/frontend", false},
+		{"zhangfeixiang/ai-coding", "topon-bidder", false},
+		{"", "my-org/frontend", true},
+		{"my-org/frontend/web-app", "", true},
+	}
+	for _, tt := range tests {
+		if got := RepoPathMatchesGroup(tt.repoPath, tt.groupPath); got != tt.want {
+			t.Errorf("RepoPathMatchesGroup(%q, %q) = %v, want %v", tt.repoPath, tt.groupPath, got, tt.want)
+		}
+	}
+}
+
+func TestSyncGroupRepos_SkipsMismatchedPath(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test-token
+groups:
+  - name: topon-bidder
+    resource: gl
+    path: topon-bidder
+    local_path: ./topon-bidder
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	newRepos := []GroupRepo{
+		{Name: "ad-platform-wiki", URL: "https://gitlab.com/topon-bidder/ad-platform/ad-platform-wiki.git", Path: "topon-bidder/ad-platform/ad-platform-wiki"},
+		{Name: "Ai Coding", URL: "https://gitlab.com/zhangfeixiang/ai-coding.git", Path: "zhangfeixiang/ai-coding"},
+	}
+
+	added, err := SyncGroupRepos(path, "topon-bidder", newRepos)
+	if err != nil {
+		t.Fatalf("SyncGroupRepos failed: %v", err)
+	}
+	if added != 1 {
+		t.Errorf("expected 1 repo added, got %d", added)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after SyncGroupRepos failed: %v", err)
+	}
+	if len(cfg.Groups[0].Repos) != 1 {
+		t.Fatalf("expected 1 repo in group, got %d", len(cfg.Groups[0].Repos))
+	}
+	if cfg.Groups[0].Repos[0].Name != "ad-platform-wiki" {
+		t.Errorf("expected ad-platform-wiki, got %q", cfg.Groups[0].Repos[0].Name)
+	}
+}
+
 // --- File lock test ---
 
 func TestWithFileLock_ConcurrentAccess(t *testing.T) {
