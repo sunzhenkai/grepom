@@ -52,6 +52,7 @@ Service definitions can be declared in .grepom.yml or passed directly on the com
   grepom svc list
   grepom svc logs -f api
   grepom svc kill api
+  grepom svc restart api
   grepom svc clean
   grepom svc dir api
   grepom svc tui`,
@@ -90,15 +91,16 @@ func registerSvcSubcommands(parent *cobra.Command) {
 	status := newSvcStatusCmd()
 	logs := newSvcLogsCmd()
 	kill := newSvcKillCmd()
+	restart := newSvcRestartCmd()
 	clean := newSvcCleanCmd()
 	dir := newSvcDirCmd()
 	tui := newSvcTuiCmd()
 
-	for _, c := range []*cobra.Command{run, logs, kill, dir, status} {
+	for _, c := range []*cobra.Command{run, logs, kill, restart, dir, status} {
 		c.ValidArgsFunction = completeSvcNames
 	}
 
-	parent.AddCommand(run, list, status, logs, kill, clean, dir, tui)
+	parent.AddCommand(run, list, status, logs, kill, restart, clean, dir, tui)
 }
 
 func newSvcRunCmd() *cobra.Command {
@@ -172,6 +174,20 @@ func newSvcKillCmd() *cobra.Command {
 	}
 	cmd.Flags().Bool("9", false, "force kill (SIGKILL)")
 	return cmd
+}
+
+func newSvcRestartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "restart [name]",
+		Short:   "Restart a service",
+		Long: `Stop a running service if needed and start it again.
+
+The command and working directory are taken from the service config when
+available, otherwise from the recorded service metadata.`,
+		Args: cobra.ExactArgs(1),
+		Example: `  grepom svc restart api`,
+		RunE: runSvcRestart,
+	}
 }
 
 func newSvcCleanCmd() *cobra.Command {
@@ -428,6 +444,20 @@ func runSvcKill(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Printf("stopped service %q\n", args[0])
+	return nil
+}
+
+func runSvcRestart(cmd *cobra.Command, args []string) error {
+	mgr, err := resolveServiceManager()
+	if err != nil {
+		return err
+	}
+	rec, err := mgr.Restart(args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("restarted service %q (pid %d)\n", rec.Name, rec.PID)
+	fmt.Printf("log: %s\n", rec.LogPath)
 	return nil
 }
 

@@ -26,6 +26,36 @@ func TestReadTailLines(t *testing.T) {
 	}
 }
 
+func TestReadLinesFromOffset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "svc.log")
+	if err := os.WriteFile(path, []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lines, offset, err := ReadLinesFromOffset(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 2 || offset != 8 {
+		t.Fatalf("initial read: lines=%v offset=%d", lines, offset)
+	}
+
+	if err := os.WriteFile(path, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lines, offset, err = ReadLinesFromOffset(path, offset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || lines[0] != "three" {
+		t.Fatalf("follow read: lines=%v", lines)
+	}
+	if offset != int64(len("one\ntwo\nthree\n")) {
+		t.Fatalf("offset = %d", offset)
+	}
+}
+
 func TestFollowLogStopsOnCancel(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "svc.log")

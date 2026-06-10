@@ -34,6 +34,13 @@ func (m modelWithContext) Init() tea.Cmd {
 
 func (m modelWithContext) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case logLinesMsg:
+		if m.mode != viewLogs {
+			return m, nil
+		}
+		m.logOffset = msg.offset
+		m.appendLogLines(msg.lines)
+		return m, m.scheduleLogFollow()
 	case tea.KeyMsg:
 		switch m.mode {
 		case viewLogs, viewDetail:
@@ -43,6 +50,8 @@ func (m modelWithContext) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "b", "esc":
 				m.mode = viewList
+				m.logLines = nil
+				m.logOffset = 0
 				return m, nil
 			}
 		default:
@@ -63,7 +72,9 @@ func (m modelWithContext) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "l":
 				if err := m.loadLogs(); err != nil {
 					m.message = err.Error()
+					return m, nil
 				}
+				return m, m.scheduleLogFollow()
 			case "d":
 				m.mode = viewDetail
 			case "p":

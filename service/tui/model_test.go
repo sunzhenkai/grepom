@@ -7,6 +7,22 @@ import (
 	"github.com/wii/grepom/service"
 )
 
+func TestModelListViewSelectedMarkerSpacing(t *testing.T) {
+	m := model{
+		cursor: 0,
+		entries: []service.Entry{
+			{
+				Record: service.Record{Name: "api", PID: 42, Cwd: "/tmp/api"},
+				Status: service.StatusRunning,
+			},
+		},
+	}
+	out := m.listView()
+	if !contains(out, "> api") {
+		t.Fatalf("expected space between marker and name: %q", out)
+	}
+}
+
 func TestModelListViewShowsPathAndStatus(t *testing.T) {
 	m := model{
 		entries: []service.Entry{

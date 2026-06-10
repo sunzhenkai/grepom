@@ -85,6 +85,65 @@ func TestListIncludesPathAndStatus(t *testing.T) {
 	}
 }
 
+func TestRestartRunningService(t *testing.T) {
+	mgr := testManager(t)
+	cwd := t.TempDir()
+	first, err := mgr.Run(RunOptions{
+		Name:    "api",
+		Cwd:     cwd,
+		Command: config.ServiceCommand{Args: []string{"sleep", "30"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Kill("api", true) })
+
+	second, err := mgr.Restart("api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.PID == first.PID {
+		t.Fatalf("expected new pid, got same %d", second.PID)
+	}
+	entry, err := mgr.Status("api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Status != StatusRunning {
+		t.Fatalf("status = %q", entry.Status)
+	}
+}
+
+func TestRestartExitedService(t *testing.T) {
+	mgr := testManager(t)
+	cwd := t.TempDir()
+	err := WithRegistryLock(mgr.Registry, func(reg *Registry) error {
+		reg.Services["worker"] = Record{
+			Name:        "worker",
+			PID:         999999,
+			Cwd:         cwd,
+			Command:     "sleep 30",
+			CommandArgs: []string{"sleep", "30"},
+			LogPath:     LogPathForService(mgr.StateDir, "worker"),
+			StartedAt:   time.Now().UTC(),
+			LastStatus:  StatusExited,
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := mgr.Restart("worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Kill("worker", true) })
+	if second.PID <= 0 {
+		t.Fatalf("invalid pid %d", second.PID)
+	}
+}
+
 func TestCleanRemovesExited(t *testing.T) {
 	mgr := testManager(t)
 	err := WithRegistryLock(mgr.Registry, func(reg *Registry) error {

@@ -3,7 +3,9 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/wii/grepom/service"
 )
 
@@ -16,15 +18,21 @@ const (
 )
 
 type model struct {
-	mgr      *service.Manager
-	entries  []service.Entry
-	cursor   int
-	mode     viewMode
-	logLines []string
-	message  string
-	width    int
-	height   int
-	quitting bool
+	mgr       *service.Manager
+	entries   []service.Entry
+	cursor    int
+	mode      viewMode
+	logLines  []string
+	logOffset int64
+	message   string
+	width     int
+	height    int
+	quitting  bool
+}
+
+type logLinesMsg struct {
+	lines  []string
+	offset int64
 }
 
 func newModel(mgr *service.Manager) model {
@@ -64,8 +72,39 @@ func (m *model) loadLogs() error {
 		return err
 	}
 	m.logLines = lines
+	m.logOffset = service.LogFileSize(entry.Record.LogPath)
 	m.mode = viewLogs
 	return nil
+}
+
+func (m model) scheduleLogFollow() tea.Cmd {
+	entry := m.selected()
+	if entry == nil || m.mode != viewLogs {
+		return nil
+	}
+	path := entry.Record.LogPath
+	offset := m.logOffset
+	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
+		lines, newOffset, err := service.ReadLinesFromOffset(path, offset)
+		if err != nil {
+			return logLinesMsg{offset: offset}
+		}
+		return logLinesMsg{lines: lines, offset: newOffset}
+	})
+}
+
+func (m *model) appendLogLines(lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	m.logLines = append(m.logLines, lines...)
+	maxLines := m.height - 4
+	if maxLines < 20 {
+		maxLines = 20
+	}
+	if len(m.logLines) > maxLines {
+		m.logLines = m.logLines[len(m.logLines)-maxLines:]
+	}
 }
 
 func (m *model) kill(force bool) error {
@@ -121,7 +160,7 @@ func (m model) listView() string {
 		if e.Record.PID > 0 {
 			pid = fmt.Sprintf("%d", e.Record.PID)
 		}
-		b.WriteString(fmt.Sprintf("%s%-15s %-8s %-8s %s\n", marker, e.Record.Name, e.Status, pid, e.Record.Cwd))
+		b.WriteString(fmt.Sprintf("%s %-15s %-8s %-8s %s\n", marker, e.Record.Name, e.Status, pid, e.Record.Cwd))
 	}
 	return b.String()
 }
@@ -134,7 +173,7 @@ func (m model) logsView() string {
 		title = fmt.Sprintf("logs: %s", entry.Record.Name)
 	}
 	b.WriteString(title)
-	b.WriteString("  [b back  q quit]\n\n")
+	b.WriteString("  [following  b back  q quit]\n\n")
 	for _, line := range m.logLines {
 		b.WriteString(line)
 		b.WriteString("\n")

@@ -169,6 +169,57 @@ func (m *Manager) Logs(ctx context.Context, name string, lines int, follow bool,
 	return nil
 }
 
+// Restart stops a running service if needed and starts it again with the same command.
+func (m *Manager) Restart(name string) (*Record, error) {
+	entry, err := m.Status(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := m.stopForRestart(entry); err != nil {
+		return nil, err
+	}
+
+	opts, err := m.runOptionsForRestart(name, entry.Record)
+	if err != nil {
+		return nil, err
+	}
+	opts.Force = true
+	return m.Run(opts)
+}
+
+func (m *Manager) stopForRestart(entry *Entry) error {
+	if !isProcessAlive(entry.Record.PID) {
+		return nil
+	}
+	return m.Kill(entry.Record.Name, true)
+}
+
+func (m *Manager) runOptionsForRestart(name string, rec Record) (RunOptions, error) {
+	if def, ok := m.Services[name]; ok && !def.Command.IsEmpty() {
+		cwd := config.ResolveServiceCwd(m.ConfigDir, def.Cwd)
+		if cwd == "" {
+			cwd = rec.Cwd
+		}
+		return RunOptions{
+			Name:    name,
+			Cwd:     cwd,
+			Command: def.Command,
+		}, nil
+	}
+
+	opts := RunOptions{Name: name, Cwd: rec.Cwd}
+	if len(rec.CommandArgs) > 0 {
+		opts.Command = config.ServiceCommand{Args: rec.CommandArgs}
+		return opts, nil
+	}
+	if rec.Command != "" {
+		opts.Command = config.ServiceCommand{Shell: rec.Command}
+		return opts, nil
+	}
+	return RunOptions{}, fmt.Errorf("service %q has no command to restart", name)
+}
+
 // Kill sends a signal to a managed service.
 func (m *Manager) Kill(name string, force bool) error {
 	entry, err := m.Status(name)
