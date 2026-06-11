@@ -20,11 +20,35 @@ Git Repository Orchestrator & Manager — manage multiple git repositories acros
 
 ## Install
 
+### One-line install (recommended)
+
+Download a prebuilt binary from GitHub Releases:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sunzhenkai/grepom/master/scripts/install.sh | bash
+```
+
+By default this installs to `~/.local/bin`. To install to a system directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sunzhenkai/grepom/master/scripts/install.sh | sudo INSTALL_DIR=/usr/local/bin bash
+```
+
+Install a specific version (including pre-releases):
+
+```bash
+VERSION=v0.2.0-rc.1 curl -fsSL https://raw.githubusercontent.com/sunzhenkai/grepom/master/scripts/install.sh | bash
+```
+
+> `latest` installs only the newest stable release, not `-rc` or `-beta` pre-releases; set `VERSION` explicitly for pre-releases.
+
+### Install via Go
+
 ```bash
 go install github.com/wii/grepom@latest
 ```
 
-Or build from source:
+### Build from source
 
 ```bash
 make install

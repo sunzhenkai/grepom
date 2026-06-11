@@ -20,11 +20,35 @@ Git 仓库编排器与管理器 — 通过单个 YAML 配置文件管理 GitLab 
 
 ## 安装
 
+### 一键安装（推荐）
+
+从 GitHub Release 下载预编译二进制：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sunzhenkai/grepom/master/scripts/install.sh | bash
+```
+
+默认安装到 `~/.local/bin`。安装到系统目录：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sunzhenkai/grepom/master/scripts/install.sh | sudo INSTALL_DIR=/usr/local/bin bash
+```
+
+安装指定版本（含预发布版本）：
+
+```bash
+VERSION=v0.2.0-rc.1 curl -fsSL https://raw.githubusercontent.com/sunzhenkai/grepom/master/scripts/install.sh | bash
+```
+
+> `latest` 仅安装最新正式版，不会安装 `-rc` 或 `-beta` 预发布版本；安装预发布版需通过 `VERSION` 显式指定。
+
+### 通过 Go 安装
+
 ```bash
 go install github.com/wii/grepom@latest
 ```
 
-或者从源代码构建：
+### 从源代码构建
 
 ```bash
 make install
