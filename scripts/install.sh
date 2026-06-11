@@ -93,7 +93,7 @@ main() {
   checksums_url="https://github.com/${REPO}/releases/download/${tag}/checksums.txt"
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  trap "rm -rf '$tmpdir'" EXIT
   archive="${tmpdir}/${asset}"
   checksums="${tmpdir}/checksums.txt"
 
