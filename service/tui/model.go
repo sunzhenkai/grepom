@@ -9,6 +9,8 @@ import (
 	"github.com/wii/grepom/service"
 )
 
+const minNameWidth = 4 // minimum column width for "NAME" header
+
 type viewMode int
 
 const (
@@ -131,6 +133,19 @@ func (m *model) clean() (int, error) {
 	return removed, nil
 }
 
+func (m *model) restart() error {
+	entry := m.selected()
+	if entry == nil {
+		return fmt.Errorf("no service selected")
+	}
+	rec, err := m.mgr.Restart(entry.Record.Name)
+	if err != nil {
+		return err
+	}
+	m.message = fmt.Sprintf("restarted %s (pid %d)", rec.Name, rec.PID)
+	return m.refresh()
+}
+
 func (m model) servicePath() string {
 	entry := m.selected()
 	if entry == nil {
@@ -139,9 +154,21 @@ func (m model) servicePath() string {
 	return entry.Record.Cwd
 }
 
+// nameWidth calculates the column width for the NAME field so that all
+// entries align correctly even when service names are longer than the header.
+func (m model) nameWidth() int {
+	w := minNameWidth
+	for _, e := range m.entries {
+		if len(e.Record.Name) > w {
+			w = len(e.Record.Name)
+		}
+	}
+	return w
+}
+
 func (m model) listView() string {
 	var b strings.Builder
-	b.WriteString("grepom svc tui  [j/k move  l logs  s stop  S kill-9  c clean  p path  r refresh  q quit]\n\n")
+	b.WriteString("grepom svc tui  [j/k move  l logs  s stop  S kill-9  R restart  c clean  p path  r refresh  q quit]\n\n")
 	if m.message != "" {
 		b.WriteString(m.message)
 		b.WriteString("\n\n")
@@ -150,7 +177,8 @@ func (m model) listView() string {
 		b.WriteString("No services found.\n")
 		return b.String()
 	}
-	b.WriteString(fmt.Sprintf("%-16s %-8s %-8s %s\n", "NAME", "STATUS", "PID", "PATH"))
+	nw := m.nameWidth()
+	b.WriteString(fmt.Sprintf("  %-*s %-8s %-8s %s\n", nw, "NAME", "STATUS", "PID", "PATH"))
 	for i, e := range m.entries {
 		marker := " "
 		if i == m.cursor {
@@ -160,7 +188,7 @@ func (m model) listView() string {
 		if e.Record.PID > 0 {
 			pid = fmt.Sprintf("%d", e.Record.PID)
 		}
-		b.WriteString(fmt.Sprintf("%s %-15s %-8s %-8s %s\n", marker, e.Record.Name, e.Status, pid, e.Record.Cwd))
+		b.WriteString(fmt.Sprintf("%s %-*s %-8s %-8s %s\n", marker, nw, e.Record.Name, e.Status, pid, e.Record.Cwd))
 	}
 	return b.String()
 }

@@ -62,7 +62,7 @@ Service definitions can be declared in .grepom.yml or passed directly on the com
 			fmt.Println(svcShellHelper)
 			return nil
 		}
-		return cmd.Help()
+		return runSvcTui(cmd, args)
 	},
 }
 

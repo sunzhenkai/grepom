@@ -183,6 +183,7 @@ grepom tag -w                       # 创建版本标签后自动监控管道状
 # 服务进程管理
 grepom svc run -- make dev         # 在当前目录后台启动服务（默认服务名为目录名）
 grepom svc run api                  # 从 .grepom.yml 读取 api 服务定义并启动
+grepom svc                          # 直接打开 TUI 管理界面（无参数时默认启动 TUI）
 grepom svc list                     # 紧凑表格：服务名、状态、PID、路径
 grepom svc list -v                  # 完整表格：额外显示命令和日志路径
 grepom svc status api               # 查看单个服务完整状态
@@ -190,10 +191,23 @@ grepom svc logs -f api              # 持续查看服务日志
 grepom svc logs --open api          # 用编辑器打开日志文件
 grepom svc kill api                 # 停止服务
 grepom svc kill -9 api              # 强制停止服务
+grepom svc restart api              # 重启服务
 grepom svc clean                    # 清理已退出服务的记录
 grepom svc dir api                  # 输出服务工作目录
-grepom svc tui                      # 打开 TUI 管理界面
+grepom svc tui                      # 显式打开 TUI 管理界面
 eval "$(grepom svc --shell)"        # 启用 gsvc 快捷跳转服务目录
+
+# TUI 快捷键（列表视图）
+# j/k 或 ↑/↓  移动光标
+# l            查看服务日志
+# s            停止服务（SIGTERM）
+# S            强制停止服务（SIGKILL）
+# R            重启服务
+# c            清理已退出的服务记录
+# p            显示服务路径
+# r            刷新列表
+# d            查看服务详情
+# q            退出
 
 # Shell 补全
 eval "$(grepom completion bash)"    # bash 补全（或 source <(grepom completion bash)）

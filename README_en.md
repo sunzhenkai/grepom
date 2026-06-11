@@ -183,6 +183,7 @@ grepom tag -w                       # Create version tag, then watch pipeline st
 # Service process management
 grepom svc run -- make dev         # Start a service in the current directory (default name = dirname)
 grepom svc run api                  # Start configured service from .grepom.yml
+grepom svc                          # Open TUI directly (default when no subcommand given)
 grepom svc list                     # Compact table: name, status, PID, path
 grepom svc list -v                  # Full table: also shows command and log path
 grepom svc status api               # Show full status for one service
@@ -190,10 +191,23 @@ grepom svc logs -f api              # Follow service logs
 grepom svc logs --open api          # Open log file in editor
 grepom svc kill api                 # Stop a service
 grepom svc kill -9 api              # Force stop a service
+grepom svc restart api              # Restart a service
 grepom svc clean                    # Remove records for exited services
 grepom svc dir api                  # Print service working directory
-grepom svc tui                      # Open interactive service management UI
+grepom svc tui                      # Explicitly open interactive service management UI
 eval "$(grepom svc --shell)"        # Enable gsvc helper for cd to service directories
+
+# TUI keybindings (list view)
+# j/k or ↑/↓  Move cursor
+# l            View service logs
+# s            Stop service (SIGTERM)
+# S            Force stop service (SIGKILL)
+# R            Restart service
+# c            Clean exited service records
+# p            Show service path
+# r            Refresh list
+# d            Show service details
+# q            Quit
 
 # Shell completion
 eval "$(grepom completion bash)"    # bash completion (or source <(grepom completion bash))

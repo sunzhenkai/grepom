@@ -93,6 +93,10 @@ func (m modelWithContext) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if _, err := m.clean(); err != nil {
 					m.message = err.Error()
 				}
+			case "R":
+				if err := m.restart(); err != nil {
+					m.message = err.Error()
+				}
 			}
 		}
 	case tea.WindowSizeMsg:
