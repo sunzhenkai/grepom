@@ -90,6 +90,12 @@ func TestOpenLogPrintsPathWhenNoEditor(t *testing.T) {
 	}
 	t.Setenv("EDITOR", "")
 	t.Setenv("VISUAL", "")
+	// Ensure xdg-open is unavailable so OpenLog falls back to printing the path.
+	emptyBin := filepath.Join(t.TempDir(), "emptybin")
+	if err := os.Mkdir(emptyBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", emptyBin)
 	var buf strings.Builder
 	if err := OpenLog(path, &buf); err != nil {
 		t.Fatal(err)

@@ -525,18 +525,12 @@ func TestGetDefaultBranch_RealRepo(t *testing.T) {
 	// Manually set origin/HEAD to simulate remote HEAD resolution
 	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
 
-	branch := "main"
-	out, _ := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if len(out) > 0 {
-		branch = strings.TrimSpace(string(out))
-	}
-
 	result, err := GetDefaultBranch(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != branch {
-		t.Errorf("expected default branch %s, got %s", branch, result)
+	if result != "main" {
+		t.Errorf("expected default branch main, got %s", result)
 	}
 }
 
@@ -601,7 +595,12 @@ func TestCheckPullSafety_CleanOnDefaultBranch(t *testing.T) {
 	run("config", "user.name", "test")
 	run("commit", "--allow-empty", "-m", "init")
 	run("remote", "add", "origin", "https://github.com/example/repo.git")
-	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	branch := strings.TrimSpace(string(out))
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/"+branch)
 
 	ok, reason := CheckPullSafety(dir)
 	if !ok {
