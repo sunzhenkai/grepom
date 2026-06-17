@@ -118,6 +118,8 @@ services:                          # optional local development service definiti
       - dev
 ```
 
+> GitLab `group.path` supports both group/subgroup paths (for example, `my-org/frontend`) and personal namespaces (for example, `sunzhenkai`). When a personal namespace is configured, `grepom sync` automatically switches to the user projects API.
+
 ### Commands
 
 ```bash

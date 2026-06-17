@@ -3,9 +3,11 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +35,21 @@ type gitlabGroup struct {
 	FullPath string `json:"full_path"`
 }
 
+type gitlabUser struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+}
+
+type gitlabAPIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *gitlabAPIError) Error() string {
+	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)
+}
+
 func (g *GitLabProvider) getClient() *http.Client {
 	if g.client == nil {
 		g.client = &http.Client{Timeout: 30 * time.Second}
@@ -44,7 +61,7 @@ func (g *GitLabProvider) ListRepos(ctx context.Context, params ListReposParams) 
 	var allRepos []Repo
 
 	for _, group := range params.Groups {
-		repos, err := g.listGroupRepos(ctx, params, group.Path, group.Recursive)
+		repos, err := g.listReposByPath(ctx, params, group.Path, group.Recursive)
 		if err != nil {
 			return nil, fmt.Errorf("gitlab: group %s: %w", group.Path, err)
 		}
@@ -89,7 +106,29 @@ func (g *GitLabProvider) listGroupRepos(ctx context.Context, params ListReposPar
 	if err != nil {
 		return nil, err
 	}
+	return g.listReposByGroup(ctx, params, groupPath, group, recursive)
+}
 
+func (g *GitLabProvider) listReposByPath(ctx context.Context, params ListReposParams, groupPath string, recursive bool) ([]Repo, error) {
+	group, err := g.getGroupByPath(ctx, params, groupPath)
+	if err == nil {
+		return g.listReposByGroup(ctx, params, groupPath, group, recursive)
+	}
+	if !isGitLabNotFound(err) {
+		return nil, err
+	}
+
+	user, userErr := g.getUserByUsername(ctx, params, groupPath)
+	if userErr == nil {
+		return g.listUserRepos(ctx, params, groupPath, user.ID)
+	}
+	if isGitLabNotFound(userErr) {
+		return nil, fmt.Errorf("path %q not found or inaccessible", groupPath)
+	}
+	return nil, userErr
+}
+
+func (g *GitLabProvider) listReposByGroup(ctx context.Context, params ListReposParams, groupPath string, group *gitlabGroup, recursive bool) ([]Repo, error) {
 	var allRepos []Repo
 	queue := []gitlabGroup{*group}
 
@@ -127,6 +166,28 @@ func (g *GitLabProvider) listGroupRepos(ctx context.Context, params ListReposPar
 	return allRepos, nil
 }
 
+func (g *GitLabProvider) listUserRepos(ctx context.Context, params ListReposParams, namespacePath string, userID int) ([]Repo, error) {
+	projects, err := g.getUserProjects(ctx, params, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var repos []Repo
+	for _, p := range projects {
+		if !pathUnderGroup(p.PathWithNamespace, namespacePath) {
+			continue
+		}
+		repos = append(repos, Repo{
+			Name:     p.Name,
+			CloneURL: p.HTTPURLToRepo,
+			SSHURL:   p.SSHURLToRepo,
+			Path:     p.PathWithNamespace,
+			Provider: "gitlab",
+		})
+	}
+	return repos, nil
+}
+
 func (g *GitLabProvider) getGroupByPath(ctx context.Context, params ListReposParams, path string) (*gitlabGroup, error) {
 	encodedPath := strings.ReplaceAll(path, "/", "%2F")
 	url := fmt.Sprintf("%s/api/v4/groups/%s", params.ServerURL, encodedPath)
@@ -136,6 +197,25 @@ func (g *GitLabProvider) getGroupByPath(ctx context.Context, params ListReposPar
 		return nil, err
 	}
 	return &group, nil
+}
+
+func (g *GitLabProvider) getUserByUsername(ctx context.Context, params ListReposParams, username string) (*gitlabUser, error) {
+	url := fmt.Sprintf("%s/api/v4/users?username=%s&per_page=100", params.ServerURL, url.QueryEscape(username))
+
+	var users []gitlabUser
+	_, err := g.getWithPagination(ctx, params.Token, url, &users)
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		if user.Username == username {
+			return &user, nil
+		}
+	}
+	return nil, &gitlabAPIError{
+		StatusCode: http.StatusNotFound,
+		Body:       `{"message":"404 User Not Found"}`,
+	}
 }
 
 func (g *GitLabProvider) getGroupProjects(ctx context.Context, params ListReposParams, groupID int) ([]gitlabProject, error) {
@@ -174,6 +254,28 @@ func (g *GitLabProvider) getSubgroups(ctx context.Context, params ListReposParam
 	return subgroups, nil
 }
 
+func (g *GitLabProvider) getUserProjects(ctx context.Context, params ListReposParams, userID int) ([]gitlabProject, error) {
+	var allProjects []gitlabProject
+	page := 1
+
+	for {
+		url := fmt.Sprintf("%s/api/v4/users/%d/projects?per_page=100&page=%d", params.ServerURL, userID, page)
+
+		var projects []gitlabProject
+		nextPage, err := g.getWithPagination(ctx, params.Token, url, &projects)
+		if err != nil {
+			return nil, err
+		}
+
+		allProjects = append(allProjects, projects...)
+		if nextPage == 0 {
+			break
+		}
+		page = nextPage
+	}
+	return allProjects, nil
+}
+
 func (g *GitLabProvider) get(ctx context.Context, token, url string, v interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -194,7 +296,10 @@ func (g *GitLabProvider) get(ctx context.Context, token, url string, v interface
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+		return &gitlabAPIError{
+			StatusCode: resp.StatusCode,
+			Body:       string(body),
+		}
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
@@ -224,7 +329,10 @@ func (g *GitLabProvider) getWithPagination(ctx context.Context, token, url strin
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+		return 0, &gitlabAPIError{
+			StatusCode: resp.StatusCode,
+			Body:       string(body),
+		}
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
@@ -272,4 +380,9 @@ func pathUnderGroup(repoPath, groupPath string) bool {
 		return true
 	}
 	return strings.HasPrefix(repoPath, groupPath)
+}
+
+func isGitLabNotFound(err error) bool {
+	var apiErr *gitlabAPIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }

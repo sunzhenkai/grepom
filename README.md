@@ -118,6 +118,8 @@ services:                          # 可选：本地开发服务定义
       - dev
 ```
 
+> GitLab `group.path` 支持组织/子组路径（如 `my-org/frontend`），也支持个人命名空间（如 `sunzhenkai`）。当配置为个人命名空间时，`grepom sync` 会自动走用户仓库接口同步可见仓库。
+
 ### 命令
 
 ```bash

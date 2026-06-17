@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -176,5 +177,139 @@ func TestGitLabProvider_Unauthorized(t *testing.T) {
 	_, err := p.ListRepos(context.Background(), params)
 	if err == nil {
 		t.Fatal("expected auth error")
+	}
+}
+
+func TestGitLabProvider_ListRepos_FallbackToUserNamespace(t *testing.T) {
+	groupPath := "sunzhenkai"
+	user := gitlabUser{ID: 99, Username: "sunzhenkai", Name: "Sun Zhenkai"}
+	projects := []gitlabProject{
+		{Name: "grepom", PathWithNamespace: "sunzhenkai/grepom", HTTPURLToRepo: "https://gitlab.com/sunzhenkai/grepom.git"},
+		{Name: "shared", PathWithNamespace: "other/shared", HTTPURLToRepo: "https://gitlab.com/other/shared.git"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v4/groups/sunzhenkai":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"404 Group Not Found"}`))
+		case r.URL.Path == "/api/v4/users":
+			if r.URL.Query().Get("username") != groupPath {
+				t.Fatalf("unexpected username query: %q", r.URL.RawQuery)
+			}
+			json.NewEncoder(w).Encode([]gitlabUser{user})
+		case r.URL.Path == "/api/v4/users/99/projects":
+			json.NewEncoder(w).Encode(projects)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+		Groups:    []GroupQuery{{Path: groupPath}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo after namespace filtering, got %d", len(repos))
+	}
+	if repos[0].Path != "sunzhenkai/grepom" {
+		t.Fatalf("expected user namespace path, got %q", repos[0].Path)
+	}
+}
+
+func TestGitLabProvider_ListRepos_PathNotFoundOrInaccessible(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v4/groups/missing":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"404 Group Not Found"}`))
+		case "/api/v4/users":
+			json.NewEncoder(w).Encode([]gitlabUser{})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+		Groups:    []GroupQuery{{Path: "missing"}},
+	}
+
+	_, err := p.ListRepos(context.Background(), params)
+	if err == nil {
+		t.Fatal("expected not found error")
+	}
+	if !strings.Contains(err.Error(), "not found or inaccessible") {
+		t.Fatalf("expected normalized path error, got %v", err)
+	}
+}
+
+func TestGitLabProvider_ListRepos_GroupAuthFailureNoFallback(t *testing.T) {
+	userAPICalled := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v4/groups/private":
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"message":"401 Unauthorized"}`))
+		case "/api/v4/users":
+			userAPICalled = true
+			json.NewEncoder(w).Encode([]gitlabUser{})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	params := ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "bad-token",
+		Groups:    []GroupQuery{{Path: "private"}},
+	}
+
+	_, err := p.ListRepos(context.Background(), params)
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	if userAPICalled {
+		t.Fatal("unexpected user fallback for non-404 group error")
+	}
+}
+
+func TestGitLabProvider_getUserByUsername_UsesEscapedQuery(t *testing.T) {
+	receivedRawQuery := ""
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v4/users" {
+			receivedRawQuery = r.URL.RawQuery
+			json.NewEncoder(w).Encode([]gitlabUser{})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	p := &GitLabProvider{}
+	_, _ = p.getUserByUsername(context.Background(), ListReposParams{
+		ServerURL: ts.URL,
+		Token:     "test-token",
+	}, "sun zhenkai")
+
+	if !strings.Contains(receivedRawQuery, "username="+url.QueryEscape("sun zhenkai")) {
+		t.Fatalf("expected escaped username query, got %q", receivedRawQuery)
 	}
 }

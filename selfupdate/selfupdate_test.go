@@ -242,17 +242,12 @@ func TestExtractBinaryMissing(t *testing.T) {
 	}
 }
 
-func TestResolveInstallDirUsesExecutableDir(t *testing.T) {
-	execPath, err := os.Executable()
+func TestResolveInstallDirDefaultLocalBin(t *testing.T) {
+	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := filepath.EvalSymlinks(execPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want = filepath.Dir(want)
-
+	want := filepath.Join(home, ".local", "bin")
 	got, err := resolveInstallDir("")
 	if err != nil {
 		t.Fatal(err)

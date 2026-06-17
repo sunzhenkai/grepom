@@ -122,15 +122,11 @@ func resolveInstallDir(installDir string) (string, error) {
 	if installDir != "" {
 		return installDir, nil
 	}
-	execPath, err := os.Executable()
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve executable path: %w", err)
+		return "", fmt.Errorf("resolve user home: %w", err)
 	}
-	execPath, err = filepath.EvalSymlinks(execPath)
-	if err != nil {
-		return "", fmt.Errorf("resolve executable symlink: %w", err)
-	}
-	return filepath.Dir(execPath), nil
+	return filepath.Join(home, ".local", "bin"), nil
 }
 
 func downloadFile(client *http.Client, url, dest string) error {
