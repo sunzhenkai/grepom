@@ -559,6 +559,134 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+func TestResolve_DeletionScheduledRepoSkipped(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "legacy-deletion_scheduled-499", URL: "https://gitlab.com/org/frontend/legacy.git", Path: "org/frontend/legacy"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (deletion_scheduled skipped), got %d: %+v", len(repos), repos)
+	}
+	if repos[0].Name != "app" {
+		t.Errorf("expected 'app', got: %s", repos[0].Name)
+	}
+}
+
+func TestResolve_DeletionScheduledByGroupPath(t *testing.T) {
+	// Entire group path contains the deletion marker → all repos under it are skipped
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"cu": {Provider: "codeup", URL: "codeup.aliyun.com", Token: "test", OrganizationID: "org1"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "legacy", Resource: "cu", Path: "dsp-services-deletion_scheduled-452", LocalPath: "./legacy",
+				Repos: []config.GroupRepo{
+					{Name: "ranker", URL: "https://codeup.aliyun.com/dsp-services-deletion_scheduled-452/ranker.git", Path: "dsp-services-deletion_scheduled-452/ranker"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 0 {
+		t.Fatalf("expected 0 repos (group path deletion_scheduled), got %d", len(repos))
+	}
+}
+
+func TestResolveAndFilter_DeletionScheduledReason(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gl": {Provider: "gitlab", URL: "gitlab.com", Token: "test"},
+		},
+		Groups: []config.Group{
+			{
+				Name: "frontend", Resource: "gl", Path: "org/frontend", LocalPath: "./frontend",
+				Repos: []config.GroupRepo{
+					{Name: "app", URL: "https://gitlab.com/org/frontend/app.git", Path: "org/frontend/app"},
+					{Name: "legacy-deletion_scheduled-1", URL: "https://gitlab.com/org/frontend/legacy.git", Path: "org/frontend/legacy"},
+				},
+			},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+
+	// Default: deletion_scheduled repo excluded
+	repos, err := resolver.ResolveAndFilter(Filter{})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+	if len(repos) != 1 || repos[0].Name != "app" {
+		t.Fatalf("expected only 'app', got %+v", repos)
+	}
+
+	// IncludeDisabled: both present, legacy marked with deletion_scheduled
+	repos, err = resolver.ResolveAndFilter(Filter{IncludeDisabled: true})
+	if err != nil {
+		t.Fatalf("ResolveAndFilter failed: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos with IncludeDisabled, got %d", len(repos))
+	}
+	for _, r := range repos {
+		if r.Name == "legacy-deletion_scheduled-1" && r.DisabledReason != "deletion_scheduled" {
+			t.Errorf("expected deletion_scheduled reason, got %s", r.DisabledReason)
+		}
+	}
+}
+
+func TestResolve_StandaloneDeletionScheduledRepoSkipped(t *testing.T) {
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gh": {Provider: "github", URL: "github.com", Token: "test"},
+		},
+		Repos: []config.Repo{
+			{Name: "dotfiles", Resource: "gh", URL: "https://github.com/me/dotfiles.git", LocalPath: "./dotfiles"},
+			{Name: "old-deletion_scheduled-9", Resource: "gh", URL: "https://github.com/me/old.git", LocalPath: "./old"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (deletion_scheduled skipped), got %d", len(repos))
+	}
+	if repos[0].Name != "dotfiles" {
+		t.Errorf("expected 'dotfiles', got: %s", repos[0].Name)
+	}
+}
+
 func TestResolve_ResourceDisabled_ExcludesAllAssociated(t *testing.T) {
 	cfg := &config.Config{
 		Base: "/home/user/projects",

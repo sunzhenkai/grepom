@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wii/grepom/config"
 )
 
 func init() {
@@ -195,7 +197,7 @@ func (p *CodeupProvider) ListRepos(ctx context.Context, params ListReposParams) 
 	var allRepos []Repo
 
 	for _, group := range params.Groups {
-		repos, err := p.listGroupRepos(ctx, params.Token, apiBase, cloneHost, group)
+		repos, err := p.listGroupRepos(ctx, params.Token, apiBase, cloneHost, group, params.IncludeDeleted)
 		if err != nil {
 			return nil, fmt.Errorf("codeup: group %s: %w", group.Path, err)
 		}
@@ -209,10 +211,10 @@ func (p *CodeupProvider) ListRepos(ctx context.Context, params ListReposParams) 
 // 1. resolve group path to groupId via ListNamespaces
 // 2. fetch repos via ListGroupRepositories
 // Falls back to full list + client-side filtering if group not found.
-func (p *CodeupProvider) listGroupRepos(ctx context.Context, token, apiBase, cloneHost string, group GroupQuery) ([]Repo, error) {
+func (p *CodeupProvider) listGroupRepos(ctx context.Context, token, apiBase, cloneHost string, group GroupQuery, includeDeleted bool) ([]Repo, error) {
 	// Empty group path: full list, no filtering
 	if group.Path == "" {
-		return p.listAllReposFull(ctx, token, apiBase, cloneHost, "")
+		return p.listAllReposFull(ctx, token, apiBase, cloneHost, "", includeDeleted)
 	}
 
 	// Step 1: try to resolve group path to groupId
@@ -223,11 +225,11 @@ func (p *CodeupProvider) listGroupRepos(ctx context.Context, token, apiBase, clo
 
 	if groupID > 0 {
 		// Step 2: fetch repos by groupId
-		return p.listGroupReposByID(ctx, token, apiBase, cloneHost, groupID, group.Recursive)
+		return p.listGroupReposByID(ctx, token, apiBase, cloneHost, groupID, group.Recursive, includeDeleted)
 	}
 
 	// Fallback: full list + client-side prefix filtering
-	return p.listAllReposFull(ctx, token, apiBase, cloneHost, group.Path)
+	return p.listAllReposFull(ctx, token, apiBase, cloneHost, group.Path, includeDeleted)
 }
 
 // resolveGroupID searches namespaces for an exact pathWithNamespace match.
@@ -253,9 +255,10 @@ func (p *CodeupProvider) resolveGroupID(ctx context.Context, token, apiBase, gro
 }
 
 // listGroupReposByID fetches repos for a specific group using ListGroupRepositories API.
-func (p *CodeupProvider) listGroupReposByID(ctx context.Context, token, apiBase, cloneHost string, groupID int, recursive bool) ([]Repo, error) {
+func (p *CodeupProvider) listGroupReposByID(ctx context.Context, token, apiBase, cloneHost string, groupID int, recursive, includeDeleted bool) ([]Repo, error) {
 	var allRepos []Repo
 	page := 1
+	skipped := 0
 
 	for {
 		apiURL := fmt.Sprintf("%s/groups/%d/repositories?page=%d&perPage=100&includeSubgroups=%v",
@@ -268,6 +271,10 @@ func (p *CodeupProvider) listGroupReposByID(ctx context.Context, token, apiBase,
 		}
 
 		for _, r := range repos {
+			if !includeDeleted && IsDeletionScheduled(r.Name, r.PathWithNamespace) {
+				skipped++
+				continue
+			}
 			allRepos = append(allRepos, Repo{
 				Name:     r.Name,
 				CloneURL: "https://" + cloneHost + "/" + r.PathWithNamespace + ".git",
@@ -283,13 +290,18 @@ func (p *CodeupProvider) listGroupReposByID(ctx context.Context, token, apiBase,
 		page = pg.NextPage
 	}
 
+	if skipped > 0 {
+		config.Verbose("codeup: skipped %d deletion_scheduled repos in group %d", skipped, groupID)
+	}
+
 	return allRepos, nil
 }
 
 // listAllReposFull fetches all repos via ListRepositories and optionally filters by path prefix.
-func (p *CodeupProvider) listAllReposFull(ctx context.Context, token, apiBase, cloneHost, pathPrefix string) ([]Repo, error) {
+func (p *CodeupProvider) listAllReposFull(ctx context.Context, token, apiBase, cloneHost, pathPrefix string, includeDeleted bool) ([]Repo, error) {
 	var allRepos []Repo
 	page := 1
+	skipped := 0
 
 	for {
 		apiURL := fmt.Sprintf("%s/repositories?page=%d&perPage=100", apiBase, page)
@@ -308,6 +320,11 @@ func (p *CodeupProvider) listAllReposFull(ctx context.Context, token, apiBase, c
 				}
 			}
 
+			if !includeDeleted && IsDeletionScheduled(r.Name, r.PathWithNamespace) {
+				skipped++
+				continue
+			}
+
 			allRepos = append(allRepos, Repo{
 				Name:     r.Name,
 				CloneURL: "https://" + cloneHost + "/" + r.PathWithNamespace + ".git",
@@ -321,6 +338,14 @@ func (p *CodeupProvider) listAllReposFull(ctx context.Context, token, apiBase, c
 			break
 		}
 		page = pg.NextPage
+	}
+
+	if skipped > 0 {
+		scope := pathPrefix
+		if scope == "" {
+			scope = "organization"
+		}
+		config.Verbose("codeup: skipped %d deletion_scheduled repos under %s", skipped, scope)
 	}
 
 	return allRepos, nil

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -145,5 +146,134 @@ groups:
 	}
 	if len(cfg.Groups[0].Repos) != 2 {
 		t.Fatalf("expected 2 group repos, got %d", len(cfg.Groups[0].Repos))
+	}
+}
+
+// --- deletion_scheduled filtering (Codeup) ---
+
+// newCodeupDeletionMockServer builds a Codeup OAPI mock that returns a mix of
+// normal and deletion_scheduled repos for the given group.
+func newCodeupDeletionMockServer(t *testing.T, groupPath string, groupID int) *httptest.Server {
+	t.Helper()
+	repos := []map[string]interface{}{
+		{"name": "active-app", "path": "active-app", "pathWithNamespace": groupPath + "/active-app"},
+		{"name": "legacy-deletion_scheduled-9", "path": "legacy", "pathWithNamespace": groupPath + "/legacy"},
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oapi/v1/codeup/organizations/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(r.URL.Path, "/namespaces"):
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"id": groupID, "path": filepath.Base(groupPath), "pathWithNamespace": groupPath},
+			})
+		case strings.Contains(r.URL.Path, fmt.Sprintf("/groups/%d/repositories", groupID)):
+			json.NewEncoder(w).Encode(repos)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	return httptest.NewServer(mux)
+}
+
+func TestSync_DeletionScheduledSkippedByDefault(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "sync-del.yml")
+	ts := newCodeupDeletionMockServer(t, "org/team", 555)
+	defer ts.Close()
+
+	content := `
+base: ` + dir + `
+resources:
+  cu:
+    provider: codeup
+    url: ` + ts.URL + `
+    token: test-token
+    organization_id: org-1
+groups:
+  - name: team
+    resource: cu
+    path: org/team
+`
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	configFile = configPath
+	syncGroup = ""
+	syncVGroup = ""
+	syncResource = ""
+	syncIncludeDeleted = false
+
+	if _, err := captureStdout(func() error {
+		return syncCmd.RunE(syncCmd, []string{})
+	}); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	repos := cfg.Groups[0].Repos
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (deletion_scheduled skipped), got %d: %+v", len(repos), repos)
+	}
+	if repos[0].Name != "active-app" {
+		t.Errorf("expected 'active-app', got %s", repos[0].Name)
+	}
+}
+
+func TestSync_IncludeDeletedFlagKeepsDeletionScheduled(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "sync-del-inc.yml")
+	ts := newCodeupDeletionMockServer(t, "org/team", 556)
+	defer ts.Close()
+
+	content := `
+base: ` + dir + `
+resources:
+  cu:
+    provider: codeup
+    url: ` + ts.URL + `
+    token: test-token
+    organization_id: org-1
+groups:
+  - name: team
+    resource: cu
+    path: org/team
+`
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	configFile = configPath
+	syncGroup = ""
+	syncVGroup = ""
+	syncResource = ""
+	syncIncludeDeleted = true
+	t.Cleanup(func() { syncIncludeDeleted = false })
+
+	if _, err := captureStdout(func() error {
+		return syncCmd.RunE(syncCmd, []string{})
+	}); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	repos := cfg.Groups[0].Repos
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos (IncludeDeleted=true), got %d: %+v", len(repos), repos)
+	}
+
+	names := map[string]bool{}
+	for _, r := range repos {
+		names[r.Name] = true
+	}
+	if !names["active-app"] || !names["legacy-deletion_scheduled-9"] {
+		t.Errorf("expected both active-app and legacy-deletion_scheduled-9, got %v", names)
 	}
 }

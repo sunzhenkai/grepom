@@ -120,6 +120,8 @@ services:                          # 可选：本地开发服务定义
 
 > GitLab `group.path` 支持组织/子组路径（如 `my-org/frontend`），也支持个人命名空间（如 `sunzhenkai`）。当配置为个人命名空间时，`grepom sync` 会自动走用户仓库接口同步可见仓库。
 
+> **回收站/计划删除仓库**：Codeup（云效）删除仓库时会进入回收站，仓库名/路径被重命名为含 `deletion_scheduled` 的形式（如 `repo-deletion_scheduled-499`），这类仓库已不可克隆。`grepom sync`、`grepom list --remote` 默认跳过这些仓库（verbose 模式 `-v` 会输出跳过数量），已写入配置的也会在运行时自动跳过，避免产生误导性的鉴权错误。如需保留，使用 `--include-deleted` 标志。
+
 ### 命令
 
 ```bash
@@ -133,6 +135,7 @@ grepom sync                         # 发现仓库并更新配置元数据
 grepom sync --source my-gitlab      # 按资源名同步
 grepom sync --group frontend        # 按组同步
 grepom sync --vgroup work           # 同步虚拟分组包含的所有真实 group
+grepom sync --include-deleted       # 包含回收站（deletion_scheduled）中的仓库
 
 # 克隆与拉取
 grepom clone                        # 克隆所有已发现的仓库
@@ -146,6 +149,12 @@ grepom pull web-app                 # 拉取特定仓库
 grepom pull --vgroup work           # 拉取虚拟分组包含的所有真实 group
 grepom pull --force                 # 跳过安全检查强制拉取
 grepom pull --concurrency 8         # 8 个 worker 并行拉取
+
+# 并行进度展示
+# 当并发 clone/pull 时（`-j N`），终端（TTY）模式下会实时渲染多行进度区域：
+# 第一行是 `[已完成/总数] cloning...` 摘要，后续每行显示一个进行中的仓库名。
+# 进度渲染并发安全：计数 `[N/M]` 单调不减，行数缩减时旧仓库名会被空行清除，
+# 不会出现错位/重叠/回退；非 TTY（管道、CI）模式下则逐行打印 `✓ repo` / `✗ repo: err`。
 
 # 查询与过滤
 grepom list                         # 列出需要关注的仓库（未推送/未提交）
@@ -161,6 +170,7 @@ grepom list resources               # 列出已配置的资源
 grepom list --remote                # 从远程 API 查询仓库列表
 grepom list --remote --vgroup work  # 查询虚拟分组包含的所有真实 group
 grepom list --remote --type groups  # 从远程 API 查询组列表
+grepom list --remote --include-deleted  # 远程列表中包含回收站仓库
 
 grepom status                       # 检查所有已克隆仓库的状态
 grepom status web-app               # 特定仓库的状态

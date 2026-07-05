@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	syncGroup    string
-	syncVGroup   string
-	syncResource string
+	syncGroup          string
+	syncVGroup         string
+	syncResource       string
+	syncIncludeDeleted bool
 )
 
 var syncCmd = &cobra.Command{
@@ -114,6 +115,7 @@ Only new repos are added to the config; existing entries are never removed.`,
 				Groups:         groups,
 				Orgs:           orgs,
 				OrganizationID: res.OrganizationID,
+				IncludeDeleted: syncIncludeDeleted,
 			}
 
 			repos, err := p.ListRepos(context.Background(), params)
@@ -197,5 +199,6 @@ func init() {
 	syncCmd.Flags().StringVarP(&syncGroup, "group", "g", "", "sync a specific group by name")
 	syncCmd.Flags().StringVarP(&syncVGroup, "vgroup", "V", "", "sync groups in a virtual group")
 	syncCmd.Flags().StringVarP(&syncResource, "resource", "R", "", "sync all groups using a specific resource")
+	syncCmd.Flags().BoolVar(&syncIncludeDeleted, "include-deleted", false, "include deletion_scheduled (recycle-bin) repos in discovery results")
 	rootCmd.AddCommand(syncCmd)
 }

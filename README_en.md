@@ -120,6 +120,8 @@ services:                          # optional local development service definiti
 
 > GitLab `group.path` supports both group/subgroup paths (for example, `my-org/frontend`) and personal namespaces (for example, `sunzhenkai`). When a personal namespace is configured, `grepom sync` automatically switches to the user projects API.
 
+> **Recycle-bin / scheduled-deletion repos**: When Codeup (Yunxiao) deletes a repo, it enters a recycle bin and is renamed to include a `deletion_scheduled` marker (for example, `repo-deletion_scheduled-499`); such repos are no longer clonable. `grepom sync` and `grepom list --remote` skip these by default (verbose mode `-v` reports the skip count), and any already saved in config are skipped at runtime too, avoiding misleading authentication errors. Use `--include-deleted` to include them.
+
 ### Commands
 
 ```bash
@@ -133,6 +135,7 @@ grepom sync                         # Discover repos and update config metadata
 grepom sync --source my-gitlab      # Sync a specific resource by name
 grepom sync --group frontend        # Sync a specific group
 grepom sync --vgroup work           # Sync all real groups in a virtual group
+grepom sync --include-deleted       # Include recycle-bin (deletion_scheduled) repos
 
 # Clone & Pull
 grepom clone                        # Clone all discovered repos
@@ -146,6 +149,14 @@ grepom pull web-app                 # Pull a specific repo
 grepom pull --vgroup work           # Pull all repos in a virtual group
 grepom pull --force                 # Skip safety checks and force pull
 grepom pull --concurrency 8         # Pull with 8 parallel workers
+
+# Parallel progress display
+# When cloning/pulling concurrently (`-j N`), TTY mode renders a live multi-line
+# progress area: the first line is a `[done/total] cloning...` summary, and each
+# subsequent line shows an in-flight repo name. The renderer is concurrency-safe:
+# the `[N/M]` counter is monotonic non-decreasing, stale repo names are cleared
+# with blank lines when the in-flight count shrinks (no overlap/garble/regress),
+# and non-TTY mode (pipes, CI) prints one `✓ repo` / `✗ repo: err` line per result.
 
 # Query & Filter
 grepom list                         # List repos needing attention (unpushed/uncommitted)
@@ -161,6 +172,7 @@ grepom list resources               # List configured resources
 grepom list --remote                # List remote repos from provider API
 grepom list --remote --vgroup work  # Query remote repos for all real groups in a virtual group
 grepom list --remote --type groups  # List remote groups from provider API
+grepom list --remote --include-deleted  # Include recycle-bin repos in remote listing
 
 grepom status                       # Check status of all cloned repos
 grepom status web-app               # Status of a specific repo

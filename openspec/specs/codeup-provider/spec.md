@@ -69,6 +69,8 @@ Codeup provider 的 `ListRepos` 方法 SHALL 通过两步查询实现：
 - `SSHURL` = `"git@" + cloneHost + ":" + pathWithNamespace + ".git"`
 - `Provider` = `"codeup"`
 
+**删除中代码库过滤**：当 `ListReposParams.IncludeDeleted` 为 `false`（默认）时，`ListRepos` SHALL 通过 `isDeletionScheduled(name, pathWithNamespace)` 检测并剔除处于"计划删除"状态的代码库（`name` 或 `pathWithNamespace` 含 `deletion_scheduled` 标记）。`IncludeDeleted` 为 `true` 时 SHALL 保留这些代码库。
+
 #### Scenario: 按代码组精确查询仓库
 - **WHEN** group.path 为 `wii/solo`，organizationId 为 `646c6887be6b046b8f87bb30`，ListNamespaces 返回匹配的 groupId 为 12345
 - **THEN** provider 调用 `GET .../groups/12345/repositories?perPage=100&page=1&includeSubgroups=false`，返回该组下的仓库
@@ -92,6 +94,18 @@ Codeup provider 的 `ListRepos` 方法 SHALL 通过两步查询实现：
 #### Scenario: 多页分页拉取
 - **WHEN** 组下有 250 个仓库，perPage=100
 - **THEN** provider 依次请求 page=1、page=2、page=3（通过 x-next-page 判断），合并所有结果
+
+#### Scenario: 默认剔除删除中代码库
+- **WHEN** ListGroupRepositories 返回 3 个代码库，其中 1 个 `name` 含 `deletion_scheduled`，`ListReposParams.IncludeDeleted` 未设置（默认 false）
+- **THEN** `ListRepos` 返回 2 个正常代码库，删除中的代码库被剔除
+
+#### Scenario: 组被删除时其下所有代码库被剔除
+- **WHEN** ListGroupRepositories 返回的代码库 `pathWithNamespace` 形如 `dsp-services-deletion_scheduled-452/repo-a`，`IncludeDeleted` 为 false
+- **THEN** 该代码库被剔除（pathWithNamespace 含 `deletion_scheduled`）
+
+#### Scenario: IncludeDeleted 为 true 时保留删除中代码库
+- **WHEN** `ListReposParams.IncludeDeleted` 为 `true`，发现结果含删除中代码库
+- **THEN** `ListRepos` 返回结果包含这些删除中代码库
 
 ### Requirement: Codeup ListGroups 实现
 Codeup provider 的 `ListGroups` 方法 SHALL 调用 `GET /oapi/v1/codeup/organizations/{orgId}/namespaces?page={page}&perPage=100` 列出组织下的所有代码组空间，将结果映射为 `RemoteGroup` 数组。

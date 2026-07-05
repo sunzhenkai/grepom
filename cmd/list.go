@@ -16,14 +16,15 @@ import (
 )
 
 var (
-	listGroup    string
-	listVGroup   string
-	listResource string
-	listType     string
-	listRemote   bool
-	listAll      bool
-	listNoPush   bool
-	listNoCommit bool
+	listGroup          string
+	listVGroup         string
+	listResource       string
+	listType           string
+	listRemote         bool
+	listAll            bool
+	listNoPush         bool
+	listNoCommit       bool
+	listIncludeDeleted bool
 )
 
 var listCmd = &cobra.Command{
@@ -97,6 +98,7 @@ func init() {
 	listCmd.Flags().BoolVarP(&listAll, "all", "a", false, "list all repos (disable attention filter, include disabled/excluded)")
 	listCmd.Flags().BoolVar(&listNoPush, "no-push", false, "only show repos with unpushed commits (ahead > 0)")
 	listCmd.Flags().BoolVar(&listNoCommit, "no-commit", false, "only show repos with uncommitted changes (dirty > 0)")
+	listCmd.Flags().BoolVar(&listIncludeDeleted, "include-deleted", false, "include deletion_scheduled (recycle-bin) repos in remote listing")
 	rootCmd.AddCommand(listCmd)
 }
 
@@ -189,6 +191,8 @@ func runListRepos(cfg *config.Config, args []string) error {
 				name = name + " [disabled]"
 			case "excluded":
 				name = name + " [excluded]"
+			case "deletion_scheduled":
+				name = name + " [deletion_scheduled]"
 			}
 		}
 
@@ -351,6 +355,7 @@ func runListRemoteRepos(cfg *config.Config) error {
 			ServerURL:      res.APIURL(),
 			Token:          resolvedToken,
 			OrganizationID: res.OrganizationID,
+			IncludeDeleted: listIncludeDeleted,
 		}
 
 		// GitLab/Codeup: 使用 Groups 查询；GitHub: 使用 Orgs

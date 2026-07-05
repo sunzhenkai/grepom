@@ -561,3 +561,153 @@ func mustMarshal(v interface{}) json.RawMessage {
 	}
 	return json.RawMessage(data)
 }
+
+// --- 4.8 ListRepos: deletion_scheduled filtering ---
+
+func TestCodeupProvider_ListRepos_DefaultSkipsDeletionScheduled(t *testing.T) {
+	orgID := "org123"
+	groupPath := "wii/solo"
+	groupID := 700
+
+	// 3 repos, one is deletion_scheduled by name, another by group path
+	groupRepos := []codeupRepo{
+		{Name: "grepom", Path: "grepom", PathWithNamespace: "wii/solo/grepom"},
+		{Name: "legacy-deletion_scheduled-499", Path: "legacy", PathWithNamespace: "wii/solo/legacy"},
+		{Name: "api", Path: "api", PathWithNamespace: "wii/deletion_scheduled-452/api"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/namespaces") {
+			namespaces := []codeupNamespace{
+				{ID: groupID, PathWithNamespace: groupPath},
+			}
+			w.Header().Set("x-total", "1")
+			json.NewEncoder(w).Encode(namespaces)
+		} else if strings.Contains(path, fmt.Sprintf("/groups/%d/repositories", groupID)) {
+			w.Header().Set("x-total", "3")
+			json.NewEncoder(w).Encode(groupRepos)
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	p := &CodeupProvider{}
+	params := ListReposParams{
+		ServerURL:      ts.URL,
+		Token:          "test-token",
+		OrganizationID: orgID,
+		Groups:         []GroupQuery{{Path: groupPath}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo (2 deletion_scheduled filtered), got %d: %+v", len(repos), repos)
+	}
+	if repos[0].Name != "grepom" {
+		t.Errorf("expected only 'grepom' to remain, got %s", repos[0].Name)
+	}
+}
+
+func TestCodeupProvider_ListRepos_IncludeDeletedKeepsAll(t *testing.T) {
+	orgID := "org123"
+	groupPath := "wii/solo"
+	groupID := 701
+
+	groupRepos := []codeupRepo{
+		{Name: "grepom", Path: "grepom", PathWithNamespace: "wii/solo/grepom"},
+		{Name: "legacy-deletion_scheduled-499", Path: "legacy", PathWithNamespace: "wii/solo/legacy"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/namespaces") {
+			namespaces := []codeupNamespace{
+				{ID: groupID, PathWithNamespace: groupPath},
+			}
+			w.Header().Set("x-total", "1")
+			json.NewEncoder(w).Encode(namespaces)
+		} else if strings.Contains(path, fmt.Sprintf("/groups/%d/repositories", groupID)) {
+			w.Header().Set("x-total", "2")
+			json.NewEncoder(w).Encode(groupRepos)
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	p := &CodeupProvider{}
+	params := ListReposParams{
+		ServerURL:      ts.URL,
+		Token:          "test-token",
+		OrganizationID: orgID,
+		Groups:         []GroupQuery{{Path: groupPath}},
+		IncludeDeleted: true,
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 2 {
+		t.Fatalf("expected 2 repos (IncludeDeleted=true), got %d", len(repos))
+	}
+}
+
+func TestCodeupProvider_ListRepos_DeletedGroupAllReposFiltered(t *testing.T) {
+	orgID := "org123"
+	groupPath := "dsp-services-deletion_scheduled-452"
+	groupID := 702
+
+	// Both repos under a deleted group inherit the marker via pathWithNamespace
+	groupRepos := []codeupRepo{
+		{Name: "creative-matching", Path: "cm", PathWithNamespace: "dsp-services-deletion_scheduled-452/creative-matching"},
+		{Name: "ranker", Path: "ranker", PathWithNamespace: "dsp-services-deletion_scheduled-452/ranker"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		if strings.Contains(path, "/namespaces") {
+			namespaces := []codeupNamespace{
+				{ID: groupID, PathWithNamespace: groupPath},
+			}
+			w.Header().Set("x-total", "1")
+			json.NewEncoder(w).Encode(namespaces)
+		} else if strings.Contains(path, fmt.Sprintf("/groups/%d/repositories", groupID)) {
+			w.Header().Set("x-total", "2")
+			json.NewEncoder(w).Encode(groupRepos)
+		} else {
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	p := &CodeupProvider{}
+	params := ListReposParams{
+		ServerURL:      ts.URL,
+		Token:          "test-token",
+		OrganizationID: orgID,
+		Groups:         []GroupQuery{{Path: groupPath}},
+	}
+
+	repos, err := p.ListRepos(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListRepos failed: %v", err)
+	}
+
+	if len(repos) != 0 {
+		t.Fatalf("expected 0 repos (entire group deletion_scheduled), got %d: %+v", len(repos), repos)
+	}
+}

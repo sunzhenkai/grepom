@@ -38,6 +38,7 @@ type ListReposParams struct {
 	Groups         []GroupQuery
 	Orgs           []string
 	OrganizationID string // optional, used by Codeup provider
+	IncludeDeleted bool   // when true, include deletion_scheduled repos in results
 }
 
 // RemoteGroup represents a remote group/org discovered from a provider API.

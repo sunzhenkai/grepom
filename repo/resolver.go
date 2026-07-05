@@ -106,11 +106,13 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 					HasGroupSSHKey: hasGroupSSHKey,
 				}
 
-				// Determine exclusion reason (priority: resource > group > exclude_repos)
+				// Determine exclusion reason (priority: resource > group > deletion_scheduled > exclude_repos)
 				if resourceDisabled {
 					pRepo.DisabledReason = "disabled"
 				} else if groupDisabled {
 					pRepo.DisabledReason = "disabled"
+				} else if provider.IsDeletionScheduled(gr.Name, gr.Path) {
+					pRepo.DisabledReason = "deletion_scheduled"
 				} else if IsExcluded(g.ExcludeRepos, gr.Name, gr.Path) {
 					pRepo.DisabledReason = "excluded"
 				}
@@ -133,6 +135,8 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 				// Check group disabled
 				if !g.IsEnabled() {
 					pRepo.DisabledReason = "disabled"
+				} else if provider.IsDeletionScheduled(gr.Name, gr.Path) {
+					pRepo.DisabledReason = "deletion_scheduled"
 				} else if IsExcluded(g.ExcludeRepos, gr.Name, gr.Path) {
 					pRepo.DisabledReason = "excluded"
 				}
@@ -195,11 +199,13 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 				HasGroupSSHKey: hasGroupSSHKey,
 			}
 
-			// Determine exclusion reason (priority: resource > repo)
+			// Determine exclusion reason (priority: resource > repo > deletion_scheduled)
 			if resourceDisabled {
 				pRepo.DisabledReason = "disabled"
 			} else if repoDisabled {
 				pRepo.DisabledReason = "disabled"
+			} else if provider.IsDeletionScheduled(repo.Name, repoPath) {
+				pRepo.DisabledReason = "deletion_scheduled"
 			}
 
 			allRepos = append(allRepos, pRepo)
@@ -214,6 +220,8 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 
 			if !repo.IsEnabled() {
 				pRepo.DisabledReason = "disabled"
+			} else if provider.IsDeletionScheduled(repo.Name, repo.URL) {
+				pRepo.DisabledReason = "deletion_scheduled"
 			}
 
 			allRepos = append(allRepos, pRepo)
