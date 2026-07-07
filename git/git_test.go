@@ -565,6 +565,86 @@ func TestGetDefaultBranch_NotAGitDir(t *testing.T) {
 	}
 }
 
+func TestGetDefaultBranch_PrefersRemoteOverStaleLocalOriginHEAD(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "src")
+	bareDir := filepath.Join(root, "bare.git")
+	workDir := filepath.Join(root, "work")
+
+	runGitDir := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+		}
+	}
+
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	runGitDir(srcDir, "init", "-b", "main")
+	runGitDir(srcDir, "config", "user.email", "test@test.com")
+	runGitDir(srcDir, "config", "user.name", "test")
+	runGitDir(srcDir, "commit", "--allow-empty", "-m", "init")
+	runGitDir(root, "clone", "--bare", srcDir, bareDir)
+	runGitDir(root, "clone", bareDir, workDir)
+
+	commitOut, err := exec.Command("git", "-C", workDir, "rev-parse", "main").Output()
+	if err != nil {
+		t.Fatalf("rev-parse main: %v", err)
+	}
+	commit := strings.TrimSpace(string(commitOut))
+	runGitDir(workDir, "update-ref", "refs/remotes/origin/master", commit)
+	runGitDir(workDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
+
+	result, err := GetDefaultBranch(workDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "main" {
+		t.Errorf("expected main from remote, got %s", result)
+	}
+}
+
+func TestParseRemoteDefaultBranch(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		branch string
+		ok     bool
+	}{
+		{
+			name:   "symref line",
+			input:  "ref: refs/heads/main\tHEAD\nb2eb85a\tHEAD\n",
+			branch: "main",
+			ok:     true,
+		},
+		{
+			name:   "no symref",
+			input:  "b2eb85a\tHEAD\n",
+			branch: "",
+			ok:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			branch, ok := parseRemoteDefaultBranch(tt.input)
+			if ok != tt.ok {
+				t.Fatalf("ok = %v, want %v", ok, tt.ok)
+			}
+			if branch != tt.branch {
+				t.Fatalf("branch = %q, want %q", branch, tt.branch)
+			}
+		})
+	}
+}
+
 // --- CheckPullSafety tests ---
 
 func TestCheckPullSafety_NotCloned(t *testing.T) {

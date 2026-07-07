@@ -339,9 +339,47 @@ func PushBranch(path string, branch string) error {
 	return nil
 }
 
-// GetDefaultBranch returns the short name of the default branch (the one origin/HEAD points to).
-// Returns an error if the repo doesn't exist or origin/HEAD is not set.
+// GetDefaultBranch returns the short name of origin's default branch.
+// It prefers querying the remote via ls-remote (accurate even when local origin/HEAD is stale),
+// then falls back to the local origin/HEAD symbolic ref.
 func GetDefaultBranch(path string) (string, error) {
+	if branch, err := defaultBranchFromRemote(path); err == nil {
+		return branch, nil
+	}
+	return defaultBranchFromLocalOriginHEAD(path)
+}
+
+func defaultBranchFromRemote(path string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "ls-remote", "--symref", "origin", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	if branch, ok := parseRemoteDefaultBranch(string(out)); ok {
+		return branch, nil
+	}
+	return "", fmt.Errorf("no default branch in ls-remote output")
+}
+
+func parseRemoteDefaultBranch(lsRemoteOut string) (string, bool) {
+	for _, line := range strings.Split(lsRemoteOut, "\n") {
+		line = strings.TrimSpace(line)
+		const prefix = "ref: refs/heads/"
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		ref := strings.TrimPrefix(line, prefix)
+		if idx := strings.IndexAny(ref, " \t"); idx >= 0 {
+			ref = ref[:idx]
+		}
+		if ref != "" {
+			return ref, true
+		}
+	}
+	return "", false
+}
+
+func defaultBranchFromLocalOriginHEAD(path string) (string, error) {
 	cmd := exec.Command("git", "-C", path, "symbolic-ref", "refs/remotes/origin/HEAD")
 	out, err := cmd.Output()
 	if err != nil {
