@@ -264,7 +264,39 @@ grepom dedup --apply                # Apply changes
 grepom add resource --name my-gl --provider gitlab --url https://gitlab.com --token '${GITLAB_TOKEN}'
 grepom add group --name frontend --resource my-gl --path my-org/frontend --recursive
 grepom add repo --name special --url https://gitlab.com/other/special.git
+
+# MCP (AI Agent integration)
+grepom mcp serve                    # Start stdio MCP Server (for agents)
+grepom mcp list-tools               # List all MCP tools
+grepom mcp install cursor           # Write MCP server config into Cursor
+grepom mcp install claude-code      # Write into Claude Code
+grepom mcp install --all            # Write into all supported agents
+grepom mcp install cursor --print   # Print config snippet only (dry-run)
 ```
+
+### MCP Integration
+
+grepom exposes its multi-repo management capabilities to local AI agents (Claude Code, Cursor, Codex, etc.) via the MCP (Model Context Protocol) stdio transport.
+
+**Quick setup:**
+
+```bash
+grepom mcp install cursor   # One-command agent config
+# Restart the agent; grepom_* tools are now available
+```
+
+**Available tools:**
+
+| Tool | Description |
+|------|-------------|
+| `grepom_list` | List repositories (optional group filter) |
+| `grepom_status` | Query repo git status |
+| `grepom_search` | Fuzzy search repos by name |
+| `grepom_dir` | Get repo local path |
+| `grepom_pull` | Pull a specific repo |
+| `grepom_clone` | Clone a specific repo |
+| `grepom_groups` | List configured groups |
+| `grepom_scan` | Secret scanning |
 
 ### Token Environment Variables
 

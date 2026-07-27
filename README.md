@@ -262,7 +262,39 @@ grepom dedup --apply                # 执行实际写入
 grepom add resource --name my-gl --provider gitlab --url https://gitlab.com --token '${GITLAB_TOKEN}'
 grepom add group --name frontend --resource my-gl --path my-org/frontend --recursive
 grepom add repo --name special --url https://gitlab.com/other/special.git
+
+# MCP（AI Agent 集成）
+grepom mcp serve                    # 启动 stdio MCP Server（供 Agent 调用）
+grepom mcp list-tools               # 列出所有 MCP 工具
+grepom mcp install cursor           # 将 MCP Server 配置写入 Cursor
+grepom mcp install claude-code      # 写入 Claude Code
+grepom mcp install --all            # 写入所有支持的 Agent
+grepom mcp install cursor --print   # 仅打印配置片段（dry-run）
 ```
+
+### MCP 集成
+
+grepom 通过 MCP（Model Context Protocol）stdio 传输协议暴露工具接口，让 AI Agent（Claude Code、Cursor、Codex 等）能直接管理多仓库。
+
+**快速接入：**
+
+```bash
+grepom mcp install cursor   # 一键写入 Agent 配置
+# 重启 Agent 后即可使用 grepom_* 工具
+```
+
+**可用工具：**
+
+| 工具 | 说明 |
+|------|------|
+| `grepom_list` | 列出仓库（支持按组过滤） |
+| `grepom_status` | 查询仓库 Git 状态 |
+| `grepom_search` | 模糊搜索仓库 |
+| `grepom_dir` | 获取仓库本地路径 |
+| `grepom_pull` | 拉取指定仓库 |
+| `grepom_clone` | 克隆指定仓库 |
+| `grepom_groups` | 列出组信息 |
+| `grepom_scan` | 密钥扫描 |
 
 ### Token 环境变量
 
