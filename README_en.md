@@ -72,16 +72,16 @@ Create a config file (default: `.grepom.yml`). grepom automatically searches par
 ```yaml
 base: ~/projects
 
-resources:
-  - name: my-gitlab
+resources:                             # canonical format is a map (key = resource name); list+name still loads
+  my-gitlab:
     provider: gitlab
-    url: https://gitlab.com
+    url: gitlab.example.com            # bare host, or with https:// prefix
     token: ${GITLAB_TOKEN}
-    ssh_key: ~/.ssh/id_work        # optional
+    ssh_key: ~/.ssh/id_work            # recommended; common default keys are tried if unset
 
-  - name: my-github
+  my-github:
     provider: github
-    url: https://github.com
+    url: github.com
     token: ${GITHUB_TOKEN}
 
 groups:
@@ -89,25 +89,30 @@ groups:
     resource: my-gitlab
     path: my-org/frontend
     recursive: true
-    exclude_repos:                 # optional: exclude specific repos
+    exclude_repos:                     # optional: exclude specific repos
       - archived-repo
 
   - name: my-org
     resource: my-github
     path: my-github-org
 
-virtual_groups:                    # optional: named collections of real groups
+virtual_groups:                        # optional: can reference real groups and standalone repos
   work:
     groups:
       - frontend
       - my-org
+    repos:                             # optional: top-level standalone repo names
+      - dotfiles
 
-repos:                             # standalone repos (not part of any group)
+repos:                                 # standalone repos (not part of any group)
   - name: dotfiles
     resource: my-github
-    url: https://github.com/me/dotfiles.git
+    url: example/dotfiles.git          # relative path: joined with resource.host
+  - name: public-demo
+    resource: my-github
+    url: https://github.com/example/public-demo.git  # absolute HTTPS: used as-is; public repos can clone anonymously
 
-services:                          # optional local development service definitions
+services:                              # optional local development service definitions
   api:
     cwd: ./backend
     command: make dev
@@ -117,6 +122,18 @@ services:                          # optional local development service definiti
       - pnpm
       - dev
 ```
+
+#### URL forms and clone protocol
+
+For standalone repos bound to a `resource`:
+
+| `repo.url` form | Behavior |
+|-----------------|----------|
+| Relative path (e.g. `org/app.git`) | Joined with `resource.url` into HTTPS/SSH; **SSH first** |
+| Absolute `https://` / `http://` | **Used as-is**; HTTPS preferred (including anonymous public clones) |
+| Absolute `git@` / `ssh://` | **Used as-is for SSH**; never re-concatenated onto resource.host |
+
+If `ssh_key` is unset, after default SSH fails grepom tries `~/.ssh/id_ed25519`, `id_rsa`, `id_ecdsa`, `id_ed25519_sk` when present. Clone failures include sanitized git stderr; use `-v` for full per-step reasons.
 
 > GitLab `group.path` supports both group/subgroup paths (for example, `my-org/frontend`) and personal namespaces (for example, `sunzhenkai`). When a personal namespace is configured, `grepom sync` automatically switches to the user projects API.
 
@@ -304,7 +321,8 @@ Token fields support `${ENV_VAR}` placeholder syntax. The actual value is resolv
 
 ```yaml
 resources:
-  - provider: gitlab
+  my-gitlab:
+    provider: gitlab
     token: ${GITLAB_TOKEN}   # Resolved from $GITLAB_TOKEN at runtime
 ```
 

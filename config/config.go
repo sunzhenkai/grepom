@@ -378,11 +378,22 @@ func (c *Config) validate() error {
 		}
 	}
 
-	// Validate virtual groups reference existing real groups
+	// Validate virtual groups reference existing real groups and standalone repos
+	repoNames := make(map[string]bool)
+	for _, r := range c.Repos {
+		if r.Name != "" {
+			repoNames[r.Name] = true
+		}
+	}
 	for vname, vg := range c.VirtualGroups {
 		for i, member := range vg.Groups {
 			if !groupNames[member] {
 				return fmt.Errorf("config: virtual_groups[%q]: groups[%d]: group %q not found", vname, i, member)
+			}
+		}
+		for i, member := range vg.Repos {
+			if !repoNames[member] {
+				return fmt.Errorf("config: virtual_groups[%q]: repos[%d]: standalone repo %q not found", vname, i, member)
 			}
 		}
 	}

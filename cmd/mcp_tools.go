@@ -300,6 +300,7 @@ func handleGrepomClone(_ context.Context, _ *mcp.CallToolRequest, in grepomClone
 		SSHKey:         r.SSHKey,
 		HasGroupToken:  r.HasGroupToken,
 		HasGroupSSHKey: r.HasGroupSSHKey,
+		PreferHTTPS:    r.PreferHTTPS,
 	})
 	if err != nil {
 		return mcpErrResult(fmt.Errorf("clone failed for %q: %w", in.Repo, err))

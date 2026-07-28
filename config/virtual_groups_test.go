@@ -195,3 +195,119 @@ func TestResolveGroupSelection_EmptyMeansAll(t *testing.T) {
 		t.Errorf("expected nil selection for no filters, got %v", selected)
 	}
 }
+
+func TestLoad_VirtualGroupWithRepos(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+repos:
+  - name: dotfiles
+    resource: gl
+    url: me/dotfiles.git
+virtual_groups:
+  tools:
+    groups:
+      - frontend
+    repos:
+      - dotfiles
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	vg := cfg.VirtualGroups["tools"]
+	if len(vg.Repos) != 1 || vg.Repos[0] != "dotfiles" {
+		t.Errorf("unexpected repos: %v", vg.Repos)
+	}
+}
+
+func TestLoad_VirtualGroupMissingRepo(t *testing.T) {
+	content := `
+base: ~/projects
+resources:
+  gl:
+    provider: gitlab
+    url: https://gitlab.com
+    token: test
+groups:
+  - name: frontend
+    resource: gl
+    path: my-org/frontend
+virtual_groups:
+  tools:
+    repos:
+      - missing-repo
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yml")
+	os.WriteFile(path, []byte(content), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for missing standalone repo")
+	}
+	if !strings.Contains(err.Error(), "missing-repo") {
+		t.Errorf("error should mention missing-repo, got: %v", err)
+	}
+}
+
+func TestResolveScopeSelection_ReposOnly(t *testing.T) {
+	cfg := &Config{
+		Repos: []Repo{{Name: "dotfiles"}},
+		VirtualGroups: map[string]VirtualGroup{
+			"tools": {Repos: []string{"dotfiles"}},
+		},
+	}
+	scope, err := cfg.ResolveScopeSelection("", "tools")
+	if err != nil {
+		t.Fatalf("ResolveScopeSelection failed: %v", err)
+	}
+	if len(scope.Groups) != 0 {
+		t.Errorf("expected no groups, got %v", scope.Groups)
+	}
+	if len(scope.RepoNames) != 1 || scope.RepoNames[0] != "dotfiles" {
+		t.Errorf("unexpected repos: %v", scope.RepoNames)
+	}
+}
+
+func TestResolveScopeSelection_MixedWithGroupUnion(t *testing.T) {
+	cfg := &Config{
+		Groups: []Group{{Name: "frontend"}, {Name: "infra"}},
+		Repos:  []Repo{{Name: "notes"}},
+		VirtualGroups: map[string]VirtualGroup{
+			"work": {Groups: []string{"frontend"}, Repos: []string{"notes"}},
+		},
+	}
+	scope, err := cfg.ResolveScopeSelection("infra", "work")
+	if err != nil {
+		t.Fatalf("ResolveScopeSelection failed: %v", err)
+	}
+	if len(scope.Groups) != 2 {
+		t.Fatalf("expected 2 groups, got %v", scope.Groups)
+	}
+	if len(scope.RepoNames) != 1 || scope.RepoNames[0] != "notes" {
+		t.Errorf("unexpected repos: %v", scope.RepoNames)
+	}
+}
+
+func TestCountMemberRepos_IncludesStandalone(t *testing.T) {
+	cfg := &Config{
+		Groups: []Group{{Name: "frontend", Repos: []GroupRepo{{Name: "a"}, {Name: "b"}}}},
+	}
+	n := cfg.CountMemberRepos([]string{"frontend"}, []string{"dotfiles"})
+	if n != 3 {
+		t.Errorf("expected 3, got %d", n)
+	}
+}

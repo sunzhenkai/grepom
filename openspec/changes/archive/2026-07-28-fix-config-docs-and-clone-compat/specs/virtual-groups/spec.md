@@ -1,9 +1,30 @@
-# virtual-groups Specification
+## ADDED Requirements
 
-## Purpose
+### Requirement: 虚拟分组可引用独立 repos
+系统 SHALL 允许 `virtual_groups.<name>` 包含可选的 `repos` 字符串数组，用于引用顶层独立仓库（`repos:` 列表中的 `name`）。`repos` 成员 MUST 存在于顶层独立仓库；不得引用 group 内仓库名或其他虚拟分组。`--vgroup` 在 list/status/clone/pull/search/prune 等过滤场景 SHALL 同时包含成员真实 groups 下的仓库与成员独立 repos。
 
-将多个真实 group 组织为命名虚拟分组，并通过 `--vgroup` 对成员 group 批量执行命令。
-## Requirements
+#### Scenario: 定义含 repos 的虚拟分组
+- **WHEN** 配置包含独立仓 `dotfiles`，且 `virtual_groups.tools.repos: [dotfiles]`
+- **THEN** 系统加载成功；`grepom list --vgroup tools` 包含 `dotfiles`
+
+#### Scenario: groups 与 repos 混合
+- **WHEN** 虚拟分组 `work` 的 `groups` 含 `frontend`，`repos` 含 `notes`
+- **THEN** `--vgroup work` 同时处理 `frontend` 下仓库与独立仓 `notes`
+
+#### Scenario: 引用不存在的独立仓
+- **WHEN** `virtual_groups.tools.repos` 包含 `missing-repo`，但顶层 `repos` 中不存在该 name
+- **THEN** 系统 SHALL 在加载配置时报错，提示虚拟分组引用了不存在的独立仓库
+
+#### Scenario: 仅 repos 无 groups
+- **WHEN** 虚拟分组只配置 `repos: [dotfiles]`，`groups` 为空或省略
+- **THEN** 系统加载成功；`--vgroup` 仅过滤到这些独立仓
+
+#### Scenario: sync --vgroup 仅作用于成员 groups
+- **WHEN** 用户运行 `grepom sync --vgroup tools`，该 vgroup 同时含 groups 与 repos
+- **THEN** 系统仅对成员真实 groups 执行远程发现；独立 repos 无 API sync 语义，保持既有声明不变
+
+## MODIFIED Requirements
+
 ### Requirement: 虚拟分组配置
 系统 SHALL 支持顶层 `virtual_groups` 配置字段，用于定义虚拟分组到真实 group 与可选独立 repo 的映射。`virtual_groups` SHALL 使用 map 结构，key 为虚拟分组名称，value 包含可选的 `groups` 字符串数组与可选的 `repos` 字符串数组。虚拟分组的 `groups` 成员 SHALL 只引用真实 group，不支持引用其他虚拟分组；`repos` 成员 SHALL 只引用顶层独立仓库。
 
@@ -22,21 +43,6 @@
 #### Scenario: 虚拟分组不支持嵌套
 - **WHEN** 配置文件中存在虚拟分组 `all` 和 `work`，且 `all.groups` 包含 `work`，但真实 group 中不存在名为 `work` 的 group
 - **THEN** 系统 SHALL 按真实 group 引用校验失败，不把 `work` 解析为另一个虚拟分组
-
-### Requirement: 虚拟分组名称命名空间
-虚拟分组名称 SHALL 与真实 group 名称处于独立命名空间。系统 SHALL 允许虚拟分组与真实 group 同名，并通过 `--vgroup` 选择虚拟分组，通过 `--group` 选择真实 group。
-
-#### Scenario: 虚拟分组与真实 group 同名
-- **WHEN** 配置中存在真实 group `work`，同时存在虚拟分组 `work`
-- **THEN** 系统 SHALL 正常加载配置，不报告名称冲突
-
-#### Scenario: 同名时 --group 选择真实 group
-- **WHEN** 用户运行 `grepom list --group work`
-- **THEN** 系统 SHALL 仅按真实 group `work` 过滤仓库
-
-#### Scenario: 同名时 --vgroup 选择虚拟分组
-- **WHEN** 用户运行 `grepom list --vgroup work`
-- **THEN** 系统 SHALL 展开虚拟分组 `work` 中列出的真实 groups，并按这些真实 groups 过滤仓库
 
 ### Requirement: --vgroup 选择语义
 支持 group 过滤的命令 SHALL 提供 `--vgroup` 标志，用于选择虚拟分组包含的真实 groups 与独立 repos。`--group` 与 `--vgroup` 同时指定时，系统 SHALL 对两者得到的真实 group 集合取并集，并将 vgroup 中的独立 repos 一并纳入过滤结果；如果两者都未指定，系统 SHALL 保持现有的全部 group/repo 行为。
@@ -64,27 +70,3 @@
 #### Scenario: --vgroup 包含独立仓
 - **WHEN** 用户运行 `grepom clone --vgroup tools`，虚拟分组 `tools` 的 `repos` 包含 `dotfiles`
 - **THEN** 系统 SHALL 将独立仓 `dotfiles` 纳入克隆集合
-
-### Requirement: 虚拟分组可引用独立 repos
-系统 SHALL 允许 `virtual_groups.<name>` 包含可选的 `repos` 字符串数组，用于引用顶层独立仓库（`repos:` 列表中的 `name`）。`repos` 成员 MUST 存在于顶层独立仓库；不得引用 group 内仓库名或其他虚拟分组。`--vgroup` 在 list/status/clone/pull/search/prune 等过滤场景 SHALL 同时包含成员真实 groups 下的仓库与成员独立 repos。
-
-#### Scenario: 定义含 repos 的虚拟分组
-- **WHEN** 配置包含独立仓 `dotfiles`，且 `virtual_groups.tools.repos: [dotfiles]`
-- **THEN** 系统加载成功；`grepom list --vgroup tools` 包含 `dotfiles`
-
-#### Scenario: groups 与 repos 混合
-- **WHEN** 虚拟分组 `work` 的 `groups` 含 `frontend`，`repos` 含 `notes`
-- **THEN** `--vgroup work` 同时处理 `frontend` 下仓库与独立仓 `notes`
-
-#### Scenario: 引用不存在的独立仓
-- **WHEN** `virtual_groups.tools.repos` 包含 `missing-repo`，但顶层 `repos` 中不存在该 name
-- **THEN** 系统 SHALL 在加载配置时报错，提示虚拟分组引用了不存在的独立仓库
-
-#### Scenario: 仅 repos 无 groups
-- **WHEN** 虚拟分组只配置 `repos: [dotfiles]`，`groups` 为空或省略
-- **THEN** 系统加载成功；`--vgroup` 仅过滤到这些独立仓
-
-#### Scenario: sync --vgroup 仅作用于成员 groups
-- **WHEN** 用户运行 `grepom sync --vgroup tools`，该 vgroup 同时含 groups 与 repos
-- **THEN** 系统仅对成员真实 groups 执行远程发现；独立 repos 无 API sync 语义，保持既有声明不变
-

@@ -264,7 +264,7 @@ func runListGroups(cfg *config.Config) error {
 		if members == "" {
 			members = "-"
 		}
-		repoCount := cfg.CountMemberRepos(vg.Groups)
+		repoCount := cfg.CountMemberRepos(vg.Groups, vg.Repos)
 		fmt.Fprintf(w, "vgroup\t%s\t-\t-\t-\t-\t%d\t%s\n", name, repoCount, members)
 	}
 	w.Flush()

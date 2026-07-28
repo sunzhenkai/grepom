@@ -36,6 +36,9 @@ type CloneOptions struct {
 	HasGroupToken  bool // true if token was set at group/repo level
 	HasGroupSSHKey bool // true if ssh_key was set at group/repo level
 
+	// PreferHTTPS puts token/anonymous HTTPS before SSH attempts.
+	PreferHTTPS bool
+
 	// LogWriter controls where clone attempt logs are written.
 	// When nil, logs are written to stdout via fmt.Printf (backward compatible).
 	// When set (e.g. &bytes.Buffer{}), logs are written there for collection.
@@ -49,10 +52,25 @@ type authStrategy struct {
 	sshKey string // non-empty means use GIT_SSH_COMMAND
 }
 
-// buildAuthStrategies builds an ordered list of clone strategies based on the
-// priority chain: group/repo SSH → group/repo token → resource SSH →
-// default SSH → resource token.
+// defaultSSHIdentityFiles are tried after default SSH when no ssh_key is configured.
+var defaultSSHIdentityFiles = []string{
+	"~/.ssh/id_ed25519",
+	"~/.ssh/id_rsa",
+	"~/.ssh/id_ecdsa",
+	"~/.ssh/id_ed25519_sk",
+}
+
+// buildAuthStrategies builds an ordered list of clone strategies.
+// PreferHTTPS (absolute http(s) URL) tries token/anonymous HTTPS before SSH.
+// Otherwise (relative path / absolute SSH) keeps SSH-first ordering.
 func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrategy {
+	if opts.PreferHTTPS {
+		return buildHTTPSPreferredStrategies(sshURL, httpURL, opts)
+	}
+	return buildSSHPreferredStrategies(sshURL, httpURL, opts)
+}
+
+func buildSSHPreferredStrategies(sshURL, httpURL string, opts CloneOptions) []authStrategy {
 	var strategies []authStrategy
 
 	// 1. group/repo SSH key (highest priority)
@@ -92,7 +110,12 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 		})
 	}
 
-	// 5. resource token
+	// 5. Default identity files (only when no ssh_key configured)
+	if opts.SSHKey == "" && sshURL != "" {
+		strategies = append(strategies, defaultIdentityStrategies(sshURL)...)
+	}
+
+	// 6. resource token
 	if !opts.HasGroupToken && opts.Token != "" && httpURL != "" {
 		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
 		strategies = append(strategies, authStrategy{
@@ -105,9 +128,86 @@ func buildAuthStrategies(sshURL, httpURL string, opts CloneOptions) []authStrate
 	return strategies
 }
 
+func buildHTTPSPreferredStrategies(sshURL, httpURL string, opts CloneOptions) []authStrategy {
+	var strategies []authStrategy
+
+	// Token HTTPS before anonymous (group/repo or resource).
+	if opts.Token != "" && httpURL != "" {
+		label := "token auth (resource)"
+		if opts.HasGroupToken {
+			label = "token auth (group/repo)"
+		}
+		tokenURL := buildTokenURL(httpURL, opts.Token, opts.Provider)
+		strategies = append(strategies, authStrategy{
+			label:  label,
+			url:    tokenURL,
+			sshKey: "",
+		})
+	}
+
+	// Anonymous HTTPS (no userinfo)
+	if httpURL != "" {
+		strategies = append(strategies, authStrategy{
+			label:  "HTTPS auth (anonymous)",
+			url:    httpURL,
+			sshKey: "",
+		})
+	}
+
+	// SSH fallbacks: group/repo key → resource key → default → default identity files
+	if opts.HasGroupSSHKey && opts.SSHKey != "" && sshURL != "" {
+		strategies = append(strategies, authStrategy{
+			label:  "SSH key auth (group/repo)",
+			url:    sshURL,
+			sshKey: opts.SSHKey,
+		})
+	}
+	if !opts.HasGroupSSHKey && opts.SSHKey != "" && sshURL != "" {
+		strategies = append(strategies, authStrategy{
+			label:  "SSH key auth (resource)",
+			url:    sshURL,
+			sshKey: opts.SSHKey,
+		})
+	}
+	if sshURL != "" {
+		strategies = append(strategies, authStrategy{
+			label:  "SSH auth (default)",
+			url:    sshURL,
+			sshKey: "",
+		})
+	}
+	if opts.SSHKey == "" && sshURL != "" {
+		strategies = append(strategies, defaultIdentityStrategies(sshURL)...)
+	}
+
+	return strategies
+}
+
+// identityFileStat checks whether a default SSH identity file exists.
+// Tests may override this to control probe behavior.
+var identityFileStat = func(path string) error {
+	_, err := os.Stat(path)
+	return err
+}
+
+func defaultIdentityStrategies(sshURL string) []authStrategy {
+	var strategies []authStrategy
+	for _, keyPath := range defaultSSHIdentityFiles {
+		expanded := expandTilde(keyPath)
+		if err := identityFileStat(expanded); err != nil {
+			continue
+		}
+		strategies = append(strategies, authStrategy{
+			label:  "SSH key auth (default identity: " + filepath.Base(expanded) + ")",
+			url:    sshURL,
+			sshKey: keyPath,
+		})
+	}
+	return strategies
+}
+
 // Clone clones a repository, creating parent directories as needed.
-// It tries authentication methods in priority order using the 5-level chain:
-// group/repo SSH → group/repo token → resource SSH → default SSH → resource token.
+// It tries authentication methods in priority order (SSH-first or HTTPS-first).
 func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
@@ -121,6 +221,7 @@ func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 
 	w := opts.LogWriter
 	total := len(strategies)
+	var failureReasons []string
 	for i, s := range strategies {
 		displayURL := maskTokenURL(s.url)
 		logf(w, "  [%d/%d] trying %s... %s\n", i+1, total, s.label, displayURL)
@@ -134,13 +235,41 @@ func Clone(path, sshURL, httpURL string, opts CloneOptions) error {
 		// Sanitize error message (remove any embedded token/URL)
 		errMsg := sanitizeError(err.Error())
 		logf(w, "  [%d/%d] failed: %s\n", i+1, total, errMsg)
+		failureReasons = append(failureReasons, summarizeFailure(s.label, errMsg))
 
 		// Clean up failed attempt
 		os.RemoveAll(path)
 		os.MkdirAll(filepath.Dir(path), 0755)
 	}
 
-	return fmt.Errorf("all authentication methods failed")
+	if len(failureReasons) == 0 {
+		return fmt.Errorf("all authentication methods failed")
+	}
+	return fmt.Errorf("all authentication methods failed: %s", strings.Join(failureReasons, "; "))
+}
+
+// summarizeFailure keeps a short, single-line reason for the final error summary.
+func summarizeFailure(label, errMsg string) string {
+	msg := strings.TrimSpace(errMsg)
+	if msg == "" {
+		return label
+	}
+	// Prefer last non-empty line (git often prints details on the last stderr line).
+	lines := strings.Split(msg, "\n")
+	last := ""
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			last = line
+		}
+	}
+	if last == "" {
+		last = msg
+	}
+	if len(last) > 160 {
+		last = last[:160] + "..."
+	}
+	return label + ": " + last
 }
 
 // logf writes to w if non-nil, otherwise to stdout via fmt.Printf.
@@ -155,7 +284,8 @@ func logf(w io.Writer, format string, args ...interface{}) {
 // tryClone attempts a single git clone with the given URL and optional SSH key.
 func tryClone(path, url, sshKey string) error {
 	cmd := exec.Command("git", "clone", url, path)
-	cmd.Stderr = &strings.Builder{}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 
 	if sshKey != "" {
 		expandedKey := expandTilde(sshKey)
@@ -164,7 +294,14 @@ func tryClone(path, url, sshKey string) error {
 		)
 	}
 
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("git clone: %s", sanitizeError(msg))
+		}
+		return fmt.Errorf("git clone: %w", err)
+	}
+	return nil
 }
 
 // buildTokenURL constructs a token-authenticated HTTPS URL.
@@ -195,19 +332,41 @@ func buildTokenURL(httpURL, token, provider string) string {
 
 // sanitizeError removes sensitive information (tokens, URLs) from error messages.
 func sanitizeError(msg string) string {
-	// Remove any URL that contains user:pass@ pattern
-	// Match https://<anything>:<anything>@
-	idx := strings.Index(msg, "https://")
-	if idx >= 0 {
-		rest := msg[idx:]
-		// Find the end of the URL (space or end of string)
-		end := strings.IndexAny(rest, " \n")
+	var result strings.Builder
+	remaining := msg
+	for {
+		idx := -1
+		scheme := ""
+		for _, s := range []string{"https://", "http://"} {
+			if i := strings.Index(remaining, s); i >= 0 && (idx < 0 || i < idx) {
+				idx = i
+				scheme = s
+			}
+		}
+		if idx < 0 {
+			result.WriteString(remaining)
+			break
+		}
+		result.WriteString(remaining[:idx])
+		rest := remaining[idx:]
+		end := strings.IndexAny(rest, " \n\t")
 		if end < 0 {
 			end = len(rest)
 		}
-		msg = msg[:idx] + "<url redacted>" + rest[end:]
+		urlPart := rest[:end]
+		if at := strings.Index(urlPart, "@"); at > len(scheme) {
+			cred := urlPart[len(scheme):at]
+			if colon := strings.Index(cred, ":"); colon >= 0 {
+				result.WriteString(scheme + cred[:colon] + ":***@" + urlPart[at+1:])
+			} else {
+				result.WriteString("<url redacted>")
+			}
+		} else {
+			result.WriteString("<url redacted>")
+		}
+		remaining = rest[end:]
 	}
-	return msg
+	return result.String()
 }
 
 // maskTokenURL 将 token URL 中的 token 部分替换为 ***。
@@ -242,9 +401,14 @@ func expandTilde(path string) string {
 // Pull runs git pull in the given directory.
 func Pull(path string) error {
 	cmd := exec.Command("git", "-C", path, "pull")
-	cmd.Stderr = &strings.Builder{}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("git pull: %s", sanitizeError(msg))
+		}
 		return fmt.Errorf("git pull: %w", err)
 	}
 	return nil

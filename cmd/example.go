@@ -13,14 +13,15 @@ const exampleConfig = `# grepom complete example configuration
 # base: local root directory for all repos (supports ~/ expansion)
 base: ~/projects
 
-# resources: named auth resources, supports gitlab / github / generic providers
+# resources: named auth resources as a YAML map (key = resource name).
+# A list of items with "name" fields is also accepted at load time, but map is preferred.
 resources:
   # GitLab example (self-hosted)
   work-gl:
     provider: gitlab
-    url: gitlab.mycompany.com      # plain host, or with protocol prefix like https://gitlab.mycompany.com
+    url: gitlab.example.com        # plain host, or with protocol prefix like https://gitlab.example.com
     token: ${GITLAB_TOKEN}         # supports ${ENV_VAR} placeholders
-    ssh_key: ~/.ssh/id_work        # optional: SSH private key path
+    ssh_key: ~/.ssh/id_work        # recommended: explicit SSH key (especially when SSH agent is unavailable)
     enabled: true                  # optional: skip all groups/repos under this resource when false
 
   # GitHub example
@@ -30,11 +31,12 @@ resources:
     token: ${GITHUB_TOKEN}
 
   # Generic example: manages arbitrary Git repos via explicit URLs, no platform API needed
+  # Tip: set ssh_key for private SSH hosts; public HTTPS URLs can clone anonymously.
   my-git:
     provider: generic
-    url: git.internal.com
+    url: git.example.com
     token: ${GIT_TOKEN}
-    ssh_key: ~/.ssh/id_internal
+    ssh_key: ~/.ssh/id_ed25519     # recommended for SSH; default keys are probed if omitted
 
 # groups: auto-discover and manage repos from remote groups/orgs
 groups:
@@ -56,27 +58,37 @@ groups:
     path: my-github-org
     recursive: false
 
-# virtual_groups: named collections of real groups for batch operations via --vgroup
+# virtual_groups: named collections of real groups and optional standalone repos for --vgroup
 virtual_groups:
   work:
     groups:
       - frontend
       - my-org
+    repos:                         # optional: top-level standalone repo names
+      - dotfiles
   personal:
     groups:
       - my-org
+    repos:
+      - public-demo
 
 # repos: explicitly declared standalone repos (not part of any group)
+# url may be a relative path (joined with resource.host) or an absolute https:// / git@ / ssh:// URL
+# Absolute URLs are used as-is (not re-concatenated onto resource.url).
 repos:
   - name: dotfiles
     resource: github
-    url: https://github.com/me/dotfiles.git
+    url: example/dotfiles.git      # relative path → git@github.com:example/dotfiles.git
     local_path: ./dotfiles         # optional: defaults to ./<name>
     ssh_key: ~/.ssh/id_personal    # optional: overrides resource ssh_key
 
+  - name: public-demo
+    resource: my-git
+    url: https://git.example.com/tools/public-demo.git  # absolute HTTPS: PreferHTTPS, anonymous OK for public repos
+
   - name: internal-tool
     resource: my-git
-    url: https://git.internal.com/tools/internal-tool.git
+    url: tools/internal-tool.git   # relative path under git.example.com (SSH preferred)
 
 # services: optional local development service definitions
 services:

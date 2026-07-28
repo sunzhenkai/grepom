@@ -6,7 +6,7 @@ import (
 )
 
 func buildRepoFilter(cfg *config.Config, group, vgroup, resource string, includeDisabled bool) (repo.Filter, error) {
-	groups, err := cfg.ResolveGroupSelection(group, vgroup)
+	scope, err := cfg.ResolveScopeSelection(group, vgroup)
 	if err != nil {
 		return repo.Filter{}, err
 	}
@@ -14,12 +14,13 @@ func buildRepoFilter(cfg *config.Config, group, vgroup, resource string, include
 	filter := repo.Filter{
 		Resource:        resource,
 		IncludeDisabled: includeDisabled,
+		RepoNames:       scope.RepoNames,
 	}
-	if len(groups) == 1 {
-		filter.Group = groups[0]
+	if len(scope.Groups) == 1 {
+		filter.Group = scope.Groups[0]
 	}
-	if len(groups) > 0 {
-		filter.Groups = groups
+	if len(scope.Groups) > 0 {
+		filter.Groups = scope.Groups
 	}
 	return filter, nil
 }

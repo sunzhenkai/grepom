@@ -21,6 +21,9 @@ type Repo struct {
 	HasGroupToken  bool // true if token was set at group/repo level (override)
 	HasGroupSSHKey bool // true if ssh_key was set at group/repo level (override)
 
+	// PreferHTTPS selects HTTPS-first auth strategies (absolute http(s) repo.url).
+	PreferHTTPS bool
+
 	// Exclusion tracking
 	DisabledReason string // "", "disabled" (resource/group/repo enabled:false), "excluded" (exclude_repos)
 }

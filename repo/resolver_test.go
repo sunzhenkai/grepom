@@ -3,6 +3,7 @@ package repo
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wii/grepom/config"
@@ -1431,4 +1432,74 @@ func searchString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestApplyFilter_RepoNamesOnly(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "web", GroupName: "frontend"},
+		{Name: "dotfiles", GroupName: ""},
+		{Name: "notes", GroupName: ""},
+	}
+	filtered := ApplyFilter(repos, Filter{RepoNames: []string{"dotfiles"}})
+	if len(filtered) != 1 || filtered[0].Name != "dotfiles" {
+		t.Fatalf("got %+v", filtered)
+	}
+}
+
+func TestApplyFilter_GroupsAndRepoNamesUnion(t *testing.T) {
+	repos := []provider.Repo{
+		{Name: "web", GroupName: "frontend"},
+		{Name: "api", GroupName: "backend"},
+		{Name: "dotfiles", GroupName: ""},
+	}
+	filtered := ApplyFilter(repos, Filter{
+		Groups:    []string{"frontend"},
+		RepoNames: []string{"dotfiles"},
+	})
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2, got %+v", filtered)
+	}
+}
+
+func TestResolve_AbsoluteURLsNotReconcatenated(t *testing.T) {
+	cfg := &config.Config{
+		Base: t.TempDir(),
+		Resources: map[string]config.Resource{
+			"my-git": {Provider: "generic", URL: "git.example.com", Token: "t"},
+		},
+		Repos: []config.Repo{
+			{Name: "https-repo", Resource: "my-git", URL: "https://git.example.com/tools/a.git"},
+			{Name: "ssh-repo", Resource: "my-git", URL: "git@git.example.com:tools/b.git"},
+			{Name: "ssh-scheme", Resource: "my-git", URL: "ssh://git@git.example.com/tools/c.git"},
+			{Name: "relative", Resource: "my-git", URL: "tools/d.git"},
+		},
+	}
+	resolver := NewResolver(cfg)
+	repos, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	byName := map[string]provider.Repo{}
+	for _, r := range repos {
+		byName[r.Name] = r
+	}
+
+	if byName["https-repo"].CloneURL != "https://git.example.com/tools/a.git" {
+		t.Errorf("https CloneURL=%s", byName["https-repo"].CloneURL)
+	}
+	if !byName["https-repo"].PreferHTTPS {
+		t.Error("https-repo should PreferHTTPS")
+	}
+	if byName["ssh-repo"].SSHURL != "git@git.example.com:tools/b.git" {
+		t.Errorf("ssh SSHURL=%s", byName["ssh-repo"].SSHURL)
+	}
+	if byName["ssh-scheme"].SSHURL != "ssh://git@git.example.com/tools/c.git" {
+		t.Errorf("ssh-scheme SSHURL=%s", byName["ssh-scheme"].SSHURL)
+	}
+	if strings.Contains(byName["ssh-scheme"].SSHURL, "git@git.example.com:ssh://") {
+		t.Error("ssh:// must not be re-concatenated")
+	}
+	if byName["relative"].SSHURL != "git@git.example.com:tools/d.git" {
+		t.Errorf("relative SSHURL=%s", byName["relative"].SSHURL)
+	}
 }

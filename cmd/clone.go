@@ -109,6 +109,7 @@ func runSequentialClone(tasks []gitpkg.CloneTask) error {
 			SSHKey:         task.Repo.SSHKey,
 			HasGroupToken:  task.Repo.HasGroupToken,
 			HasGroupSSHKey: task.Repo.HasGroupSSHKey,
+			PreferHTTPS:    task.Repo.PreferHTTPS,
 		}
 		result := gitpkg.CloneResult{Repo: task.Repo, FullPath: task.FullPath}
 		if err := gitpkg.Clone(task.FullPath, task.Repo.SSHURL, task.Repo.CloneURL, opts); err != nil {

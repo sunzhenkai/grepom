@@ -14,6 +14,7 @@ type Filter struct {
 	Name            string
 	Group           string   // single group name (backward compatible)
 	Groups          []string // multiple group names
+	RepoNames       []string // standalone repo names (from virtual_groups.repos)
 	Resource        string   // resource name
 	IncludeDisabled bool     // when true, include disabled/excluded repos in results
 }
@@ -31,6 +32,41 @@ func matchesGroupFilter(groupName string, filter Filter) bool {
 		return groupName == filter.Group
 	}
 	return true
+}
+
+func matchesRepoNameFilter(repoName string, filter Filter) bool {
+	if len(filter.RepoNames) == 0 {
+		return false
+	}
+	for _, name := range filter.RepoNames {
+		if name == repoName {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesScopeFilter matches group membership and/or standalone repo names.
+// When Groups/Group and RepoNames are both set, a repo matches if either condition holds.
+// When only RepoNames is set, only standalone repos (empty GroupName) in that list match.
+func matchesScopeFilter(r provider.Repo, filter Filter) bool {
+	hasGroupFilter := filter.Group != "" || len(filter.Groups) > 0
+	hasRepoFilter := len(filter.RepoNames) > 0
+
+	if !hasGroupFilter && !hasRepoFilter {
+		return true
+	}
+
+	matchGroup := hasGroupFilter && matchesGroupFilter(r.GroupName, filter)
+	matchRepo := hasRepoFilter && r.GroupName == "" && matchesRepoNameFilter(r.Name, filter)
+
+	if hasGroupFilter && hasRepoFilter {
+		return matchGroup || matchRepo
+	}
+	if hasGroupFilter {
+		return matchGroup
+	}
+	return matchRepo
 }
 
 // Resolver builds a list of provider.Repo from the config.
@@ -184,12 +220,13 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 				}
 			}
 
+			urls := ResolveBoundRepoURLs(repo.URL, res)
 			repoPath := ExtractRemotePath(repo.URL)
 
 			pRepo := provider.Repo{
 				Name:           repo.Name,
-				CloneURL:       res.HTTPSURL(repoPath),
-				SSHURL:         deriveSSHURL(repoPath, res.URL),
+				CloneURL:       urls.CloneURL,
+				SSHURL:         urls.SSHURL,
 				Path:           localPath,
 				Provider:       res.Provider,
 				Resource:       repo.Resource,
@@ -197,6 +234,7 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 				SSHKey:         sshKey,
 				HasGroupToken:  hasRepoToken,
 				HasGroupSSHKey: hasGroupSSHKey,
+				PreferHTTPS:    urls.PreferHTTPS,
 			}
 
 			// Determine exclusion reason (priority: resource > repo > deletion_scheduled)
@@ -293,7 +331,7 @@ func (r *Resolver) ResolveAndFilter(filter Filter) ([]provider.Repo, error) {
 	return ApplyFilter(allRepos, filter), nil
 }
 
-// ApplyFilter filters a repo list by name, group, or resource.
+// ApplyFilter filters a repo list by name, group, standalone repo names, or resource.
 func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 	var result []provider.Repo
 
@@ -301,7 +339,7 @@ func ApplyFilter(repos []provider.Repo, filter Filter) []provider.Repo {
 		if filter.Name != "" && r.Name != filter.Name {
 			continue
 		}
-		if !matchesGroupFilter(r.GroupName, filter) {
+		if !matchesScopeFilter(r, filter) {
 			continue
 		}
 		if filter.Resource != "" && r.Resource != filter.Resource {
@@ -323,7 +361,7 @@ func ApplyExactFirstSearch(repos []provider.Repo, keyword string, filter Filter)
 	var exact []provider.Repo
 	for _, r := range repos {
 		if strings.ToLower(r.Name) == lower {
-			if !matchesGroupFilter(r.GroupName, filter) {
+			if !matchesScopeFilter(r, filter) {
 				continue
 			}
 			if filter.Resource != "" && r.Resource != filter.Resource {
@@ -350,7 +388,7 @@ func ApplySearchFilter(repos []provider.Repo, keyword string, filter Filter) []p
 		if keyword != "" && !strings.Contains(strings.ToLower(r.Name), keyword) {
 			continue
 		}
-		if !matchesGroupFilter(r.GroupName, filter) {
+		if !matchesScopeFilter(r, filter) {
 			continue
 		}
 		if filter.Resource != "" && r.Resource != filter.Resource {
@@ -377,6 +415,7 @@ func deriveSSHURL(repoPath, host string) string {
 // ExtractRemotePath 从克隆 URL 中提取 repo 远程路径部分。
 // 例如 "https://gitlab.com/me/dotfiles.git" → "me/dotfiles"
 // "git@gitlab.com:me/dotfiles.git" → "me/dotfiles"
+// "ssh://git@gitlab.com/me/dotfiles.git" → "me/dotfiles"
 // "me/dotfiles.git" → "me/dotfiles"
 func ExtractRemotePath(cloneURL string) string {
 	// 去掉 .git 后缀
@@ -392,6 +431,15 @@ func ExtractRemotePath(cloneURL string) string {
 			}
 			return path
 		}
+	}
+
+	// 处理 ssh://[user@]host[:port]/path
+	if strings.HasPrefix(path, "ssh://") {
+		rest := strings.TrimPrefix(path, "ssh://")
+		if idx := strings.Index(rest, "/"); idx >= 0 {
+			return rest[idx+1:]
+		}
+		return rest
 	}
 
 	// 处理 git@host:path 格式

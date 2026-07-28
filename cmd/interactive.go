@@ -841,6 +841,7 @@ func interactiveClone() {
 				SSHKey:         task.Repo.SSHKey,
 				HasGroupToken:  task.Repo.HasGroupToken,
 				HasGroupSSHKey: task.Repo.HasGroupSSHKey,
+				PreferHTTPS:    task.Repo.PreferHTTPS,
 			}
 			if err := gitpkg.Clone(task.FullPath, task.Repo.SSHURL, task.Repo.CloneURL, opts); err != nil {
 				fmt.Fprintf(os.Stderr, "clone %s failed: %v\n", task.Repo.Path, err)

@@ -79,6 +79,7 @@ func CloneAll(concurrency int, tasks []CloneTask, onProgress ProgressFunc) []Clo
 					SSHKey:         task.Repo.SSHKey,
 					HasGroupToken:  task.Repo.HasGroupToken,
 					HasGroupSSHKey: task.Repo.HasGroupSSHKey,
+					PreferHTTPS:    task.Repo.PreferHTTPS,
 					LogWriter:      &buf,
 				}
 				err := Clone(task.FullPath, task.Repo.SSHURL, task.Repo.CloneURL, opts)

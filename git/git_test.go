@@ -171,11 +171,8 @@ func TestSanitizeError_RemovesURL(t *testing.T) {
 	if strings.Contains(result, "secret") {
 		t.Error("sanitized error should not contain token")
 	}
-	if strings.Contains(result, "x-access-token") {
-		t.Error("sanitized error should not contain username")
-	}
-	if !strings.Contains(result, "<url redacted>") {
-		t.Error("sanitized error should contain <url redacted>")
+	if !strings.Contains(result, ":***@") {
+		t.Errorf("sanitized error should mask token, got: %s", result)
 	}
 }
 
@@ -217,7 +214,15 @@ func TestExpandTilde_JustTilde(t *testing.T) {
 
 // --- buildAuthStrategies tests (SSH-priority chain) ---
 
+func withoutDefaultIdentities(t *testing.T) {
+	t.Helper()
+	orig := identityFileStat
+	identityFileStat = func(string) error { return os.ErrNotExist }
+	t.Cleanup(func() { identityFileStat = orig })
+}
+
 func TestBuildAuthStrategies_GroupRepoSSHFirst(t *testing.T) {
+	withoutDefaultIdentities(t)
 	opts := CloneOptions{
 		Token:          "group-token",
 		Provider:       "github",
@@ -244,6 +249,7 @@ func TestBuildAuthStrategies_GroupRepoSSHFirst(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_ResourceSSHPriorityOverToken(t *testing.T) {
+	withoutDefaultIdentities(t)
 	opts := CloneOptions{
 		Token:          "res-token",
 		Provider:       "gitlab",
@@ -272,6 +278,7 @@ func TestBuildAuthStrategies_ResourceSSHPriorityOverToken(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_GroupRepoAuthBeforeResource(t *testing.T) {
+	withoutDefaultIdentities(t)
 	// When group has SSH key only, and resource has both token and SSH key
 	opts := CloneOptions{
 		Token:          "res-token", // from resource (not overridden)
@@ -302,6 +309,7 @@ func TestBuildAuthStrategies_GroupRepoAuthBeforeResource(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_NoAuth(t *testing.T) {
+	withoutDefaultIdentities(t)
 	opts := CloneOptions{Provider: "github"}
 	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
 
@@ -314,6 +322,7 @@ func TestBuildAuthStrategies_NoAuth(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_OnlyToken(t *testing.T) {
+	withoutDefaultIdentities(t)
 	opts := CloneOptions{
 		Token:         "mytoken",
 		Provider:      "gitlab",
@@ -339,6 +348,7 @@ func TestBuildAuthStrategies_OnlyToken(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_OnlySSHKey(t *testing.T) {
+	withoutDefaultIdentities(t)
 	opts := CloneOptions{
 		SSHKey:         "/path/to/key",
 		Provider:       "github",
@@ -359,6 +369,7 @@ func TestBuildAuthStrategies_OnlySSHKey(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_Full5LevelChain(t *testing.T) {
+	withoutDefaultIdentities(t)
 	// Group has both SSH key and token, and resource also has both
 	// After resolver merge: SSHKey=group key, Token=group token (overrides)
 	// But we track both levels. In practice, resolver only sets the merged values.
@@ -390,6 +401,7 @@ func TestBuildAuthStrategies_Full5LevelChain(t *testing.T) {
 // --- New priority tests: default SSH before resource token ---
 
 func TestBuildAuthStrategies_GroupSSH_ResourceTokenOnly(t *testing.T) {
+	withoutDefaultIdentities(t)
 	// group 有 SSH key + resource 有 token 时：group SSH → default SSH → resource token
 	opts := CloneOptions{
 		Token:          "res-token",
@@ -416,6 +428,7 @@ func TestBuildAuthStrategies_GroupSSH_ResourceTokenOnly(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_GroupToken_ResourceSSHAndToken(t *testing.T) {
+	withoutDefaultIdentities(t)
 	// group 有 token（无 SSH）+ resource 有 SSH + token 时：
 	// group token → resource SSH → default SSH → resource token
 	opts := CloneOptions{
@@ -444,6 +457,7 @@ func TestBuildAuthStrategies_GroupToken_ResourceSSHAndToken(t *testing.T) {
 }
 
 func TestBuildAuthStrategies_DefaultSSHPriorToResourceToken(t *testing.T) {
+	withoutDefaultIdentities(t)
 	// 仅 resource token（无 SSH key）时：default SSH → resource token
 	opts := CloneOptions{
 		Token:    "res-token",
@@ -1120,4 +1134,134 @@ func TestPush_WithArgs(t *testing.T) {
 		t.Log("push --dry-run succeeded (no remote)")
 	}
 	// The key test is that the function doesn't panic with args
+}
+
+// --- PreferHTTPS / default identities / diagnostics ---
+
+func TestBuildAuthStrategies_PreferHTTPS_AnonymousFirstWithoutToken(t *testing.T) {
+	withoutDefaultIdentities(t)
+	opts := CloneOptions{Provider: "github", PreferHTTPS: true}
+	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
+
+	if len(strategies) < 2 {
+		t.Fatalf("expected at least anonymous + default SSH, got %d", len(strategies))
+	}
+	if strategies[0].label != "HTTPS auth (anonymous)" {
+		t.Errorf("expected anonymous HTTPS first, got %s", strategies[0].label)
+	}
+	if strategies[0].url != "https://github.com/org/repo.git" {
+		t.Errorf("anonymous URL mismatch: %s", strategies[0].url)
+	}
+}
+
+func TestBuildAuthStrategies_PreferHTTPS_TokenBeforeAnonymous(t *testing.T) {
+	withoutDefaultIdentities(t)
+	opts := CloneOptions{
+		Token:       "tok",
+		Provider:    "github",
+		PreferHTTPS: true,
+	}
+	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
+	if len(strategies) < 2 {
+		t.Fatalf("expected token + anonymous, got %d", len(strategies))
+	}
+	if !strings.Contains(strategies[0].label, "token") {
+		t.Errorf("expected token first, got %s", strategies[0].label)
+	}
+	if strategies[1].label != "HTTPS auth (anonymous)" {
+		t.Errorf("expected anonymous second, got %s", strategies[1].label)
+	}
+}
+
+func TestBuildAuthStrategies_RelativeKeepsSSHFirst(t *testing.T) {
+	withoutDefaultIdentities(t)
+	opts := CloneOptions{Provider: "generic", PreferHTTPS: false}
+	strategies := buildAuthStrategies("git@git.example.com:org/app.git", "https://git.example.com/org/app.git", opts)
+	if strategies[0].label != "SSH auth (default)" {
+		t.Errorf("relative path should keep SSH first, got %s", strategies[0].label)
+	}
+	for _, s := range strategies {
+		if s.label == "HTTPS auth (anonymous)" {
+			t.Fatal("relative path must not insert anonymous HTTPS before SSH")
+		}
+	}
+}
+
+func TestBuildAuthStrategies_DefaultIdentityOrder(t *testing.T) {
+	orig := identityFileStat
+	t.Cleanup(func() { identityFileStat = orig })
+
+	seen := []string{}
+	identityFileStat = func(path string) error {
+		base := filepath.Base(path)
+		seen = append(seen, base)
+		if base == "id_ed25519" || base == "id_rsa" {
+			return nil
+		}
+		return os.ErrNotExist
+	}
+
+	opts := CloneOptions{Provider: "github"}
+	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
+
+	wantOrder := []string{"id_ed25519", "id_rsa", "id_ecdsa", "id_ed25519_sk"}
+	if len(seen) != len(wantOrder) {
+		t.Fatalf("probe order len=%d want %d: %v", len(seen), len(wantOrder), seen)
+	}
+	for i, w := range wantOrder {
+		if seen[i] != w {
+			t.Fatalf("probe[%d]=%s want %s (%v)", i, seen[i], w, seen)
+		}
+	}
+
+	var identityLabels []string
+	for _, s := range strategies {
+		if strings.Contains(s.label, "default identity") {
+			identityLabels = append(identityLabels, s.label)
+		}
+	}
+	if len(identityLabels) != 2 {
+		t.Fatalf("expected 2 identity strategies, got %v", identityLabels)
+	}
+	if !strings.Contains(identityLabels[0], "id_ed25519") || !strings.Contains(identityLabels[1], "id_rsa") {
+		t.Errorf("unexpected identity order: %v", identityLabels)
+	}
+}
+
+func TestBuildAuthStrategies_DefaultIdentitySkippedWhenSSHKeySet(t *testing.T) {
+	orig := identityFileStat
+	t.Cleanup(func() { identityFileStat = orig })
+	identityFileStat = func(string) error { return nil } // would match all if called
+
+	opts := CloneOptions{
+		SSHKey:   "/path/to/key",
+		Provider: "github",
+	}
+	strategies := buildAuthStrategies("git@github.com:org/repo.git", "https://github.com/org/repo.git", opts)
+	for _, s := range strategies {
+		if strings.Contains(s.label, "default identity") {
+			t.Fatalf("should not probe default identities when ssh_key set, got %s", s.label)
+		}
+	}
+}
+
+func TestSummarizeFailure_UsesLastLine(t *testing.T) {
+	got := summarizeFailure("SSH auth (default)", "git clone: line1\nPermission denied (publickey).")
+	if !strings.Contains(got, "Permission denied") {
+		t.Errorf("got %s", got)
+	}
+	if !strings.Contains(got, "SSH auth (default)") {
+		t.Errorf("got %s", got)
+	}
+}
+
+func TestMaskTokenURL_InSanitize(t *testing.T) {
+	msg := "fatal: could not read from remote 'https://oauth2:glpat-secret@gitlab.com/org/repo.git'"
+	result := sanitizeError(msg)
+	if strings.Contains(result, "glpat-secret") {
+		t.Errorf("token leaked: %s", result)
+	}
+	if !strings.Contains(result, "oauth2:***@") {
+		t.Errorf("expected masked token URL, got %s", result)
+	}
 }

@@ -72,16 +72,16 @@ grepom clone                    # 克隆所有仓库
 ```yaml
 base: ~/projects
 
-resources:
-  - name: my-gitlab
+resources:                             # 正式格式为 map（key 为资源名）；list+name 写法仍可加载
+  my-gitlab:
     provider: gitlab
-    url: https://gitlab.com
+    url: gitlab.example.com            # 纯 host，或带 https:// 前缀
     token: ${GITLAB_TOKEN}
-    ssh_key: ~/.ssh/id_work        # 可选
+    ssh_key: ~/.ssh/id_work            # 建议显式配置；未配置时会尝试常见默认私钥
 
-  - name: my-github
+  my-github:
     provider: github
-    url: https://github.com
+    url: github.com
     token: ${GITHUB_TOKEN}
 
 groups:
@@ -89,25 +89,30 @@ groups:
     resource: my-gitlab
     path: my-org/frontend
     recursive: true
-    exclude_repos:                 # 可选：排除指定仓库
+    exclude_repos:                     # 可选：排除指定仓库
       - archived-repo
 
   - name: my-org
     resource: my-github
     path: my-github-org
 
-virtual_groups:                    # 可选：虚拟分组，将多个真实 group 组织为集合
+virtual_groups:                        # 可选：虚拟分组（可同时引用真实 groups 与独立 repos）
   work:
     groups:
       - frontend
       - my-org
+    repos:                             # 可选：引用顶层独立仓库
+      - dotfiles
 
-repos:                             # 独立仓库（不属于任何组）
+repos:                                 # 独立仓库（不属于任何组）
   - name: dotfiles
     resource: my-github
-    url: https://github.com/me/dotfiles.git
+    url: example/dotfiles.git          # 相对路径：与 resource.host 拼接
+  - name: public-demo
+    resource: my-github
+    url: https://github.com/example/public-demo.git  # 完整 HTTPS：不再二次拼接，可匿名克隆公开仓
 
-services:                          # 可选：本地开发服务定义
+services:                              # 可选：本地开发服务定义
   api:
     cwd: ./backend
     command: make dev
@@ -117,6 +122,18 @@ services:                          # 可选：本地开发服务定义
       - pnpm
       - dev
 ```
+
+#### URL 写法与克隆协议
+
+绑定 `resource` 的独立仓：
+
+| `repo.url` 形态 | 行为 |
+|-----------------|------|
+| 相对路径（如 `org/app.git`） | 与 `resource.url` 拼成 HTTPS/SSH；**SSH 优先** |
+| 完整 `https://` / `http://` | **原样使用**，优先 HTTPS（含匿名公开仓） |
+| 完整 `git@` / `ssh://` | **原样用于 SSH**，不再拼到 resource host 后 |
+
+未配置 `ssh_key` 时，默认 SSH 失败后会依次尝试 `~/.ssh/id_ed25519`、`id_rsa`、`id_ecdsa`、`id_ed25519_sk`（存在才试）。克隆失败时错误信息会带上脱敏后的 git stderr；加 `-v` 可看每步完整原因。
 
 > GitLab `group.path` 支持组织/子组路径（如 `my-org/frontend`），也支持个人命名空间（如 `sunzhenkai`）。当配置为个人命名空间时，`grepom sync` 会自动走用户仓库接口同步可见仓库。
 
@@ -302,7 +319,8 @@ Token 字段支持 `${ENV_VAR}` 占位符语法。实际值在运行时从环境
 
 ```yaml
 resources:
-  - provider: gitlab
+  my-gitlab:
+    provider: gitlab
     token: ${GITLAB_TOKEN}   # 在运行时从 $GITLAB_TOKEN 解析
 ```
 
