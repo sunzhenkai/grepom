@@ -7,3 +7,6 @@ grepom
 
 # OS
 .DS_Store
+
+# Qoder
+.qoder/settings.local.json
