@@ -1425,6 +1425,67 @@ func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
 }
 
+func TestResolveAndFilter_LazyTokenResolution_FilteredOutRepo(t *testing.T) {
+	os.Unsetenv("FILTERED_OUT_UNDEF_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gh-wii": {Provider: "github", URL: "github.com", Token: "${FILTERED_OUT_UNDEF_TOKEN}"},
+			"gl":     {Provider: "gitlab", URL: "gitlab.com", Token: "plain-token"},
+		},
+		Repos: []config.Repo{
+			{Name: "protocols", Resource: "gh-wii", URL: "https://github.com/wii/protocols.git", LocalPath: "./protocols"},
+			{Name: "agent-data", Resource: "gl", URL: "https://gitlab.com/me/agent-data.git", LocalPath: "./agent-data"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	repos, err := resolver.ResolveAndFilter(Filter{Name: "agent-data"})
+	if err != nil {
+		t.Fatalf("filtered-out repo with unset token should not fail, got: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+	if repos[0].Name != "agent-data" {
+		t.Errorf("expected repo 'agent-data', got: %s", repos[0].Name)
+	}
+	if repos[0].Token != "plain-token" {
+		t.Errorf("expected token 'plain-token', got: %s", repos[0].Token)
+	}
+}
+
+func TestResolveAndFilter_LazyTokenResolution_SelectedRepoMissingToken(t *testing.T) {
+	os.Unsetenv("SELECTED_UNDEF_TOKEN")
+
+	cfg := &config.Config{
+		Base: "/home/user/projects",
+		Resources: map[string]config.Resource{
+			"gh-wii": {Provider: "github", URL: "github.com", Token: "${SELECTED_UNDEF_TOKEN}"},
+		},
+		Repos: []config.Repo{
+			{Name: "protocols", Resource: "gh-wii", URL: "https://github.com/wii/protocols.git", LocalPath: "./protocols"},
+		},
+	}
+
+	resolver := NewResolver(cfg)
+	_, err := resolver.ResolveAndFilter(Filter{Name: "protocols"})
+	if err == nil {
+		t.Fatal("expected error when selected repo's token env var is not set")
+	}
+	errMsg := err.Error()
+	if !contains(errMsg, "protocols") {
+		t.Errorf("error should contain repo name 'protocols', got: %s", errMsg)
+	}
+	if !contains(errMsg, "gh-wii") {
+		t.Errorf("error should contain resource name 'gh-wii', got: %s", errMsg)
+	}
+	if !contains(errMsg, "SELECTED_UNDEF_TOKEN") {
+		t.Errorf("error should contain env var name 'SELECTED_UNDEF_TOKEN', got: %s", errMsg)
+	}
+}
+
 func searchString(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

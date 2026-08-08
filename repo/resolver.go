@@ -80,8 +80,9 @@ func NewResolver(cfg *config.Config) *Resolver {
 
 // resolveInternal builds the full repo list from all groups and standalone repos,
 // setting DisabledReason for each repo that should be excluded.
-// Token environment variable placeholders are resolved lazily: only enabled repos
-// that will actually be used have their tokens resolved.
+// Token environment variable placeholders are kept unresolved here; they are
+// resolved lazily by resolveRepoTokens after filtering, so only repos that will
+// actually be used require their environment variables to be set.
 func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 	var allRepos []provider.Repo
 
@@ -111,17 +112,14 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 			resourceDisabled := !res.IsEnabled()
 			groupDisabled := !g.IsEnabled()
 
-			// Lazily resolve token only when resource and group are both enabled
-			var resolved string
+			// Keep the raw token (possibly a ${ENV_VAR} placeholder); resolution
+			// happens lazily after filtering. Disabled repos get no token.
+			var rawToken string
 			if !resourceDisabled && !groupDisabled {
-				var err error
 				if hasGroupToken {
-					resolved, err = config.ResolveToken(token)
+					rawToken = token
 				} else {
-					resolved, err = res.ResolvedToken()
-				}
-				if err != nil {
-					return nil, fmt.Errorf("group %q (resource %q): %w", g.Name, g.Resource, err)
+					rawToken = res.Token
 				}
 			}
 
@@ -136,7 +134,7 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 					Provider:       res.Provider,
 					Resource:       g.Resource,
 					GroupName:      g.Name,
-					Token:          resolved,
+					Token:          rawToken,
 					SSHKey:         sshKey,
 					HasGroupToken:  hasGroupToken,
 					HasGroupSSHKey: hasGroupSSHKey,
@@ -206,17 +204,14 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 			resourceDisabled := !res.IsEnabled()
 			repoDisabled := !repo.IsEnabled()
 
-			// Lazily resolve token only when resource and repo are both enabled
-			var resolved string
+			// Keep the raw token (possibly a ${ENV_VAR} placeholder); resolution
+			// happens lazily after filtering. Disabled repos get no token.
+			var rawToken string
 			if !resourceDisabled && !repoDisabled {
-				var err error
 				if hasRepoToken {
-					resolved, err = config.ResolveToken(token)
+					rawToken = token
 				} else {
-					resolved, err = res.ResolvedToken()
-				}
-				if err != nil {
-					return nil, fmt.Errorf("repo %q (resource %q): %w", repo.Name, repo.Resource, err)
+					rawToken = res.Token
 				}
 			}
 
@@ -230,7 +225,7 @@ func (r *Resolver) resolveInternal() ([]provider.Repo, error) {
 				Path:           localPath,
 				Provider:       res.Provider,
 				Resource:       repo.Resource,
-				Token:          resolved,
+				Token:          rawToken,
 				SSHKey:         sshKey,
 				HasGroupToken:  hasRepoToken,
 				HasGroupSSHKey: hasGroupSSHKey,
@@ -306,11 +301,15 @@ func (r *Resolver) Resolve() ([]provider.Repo, error) {
 			enabled = append(enabled, repo)
 		}
 	}
+	if err := resolveRepoTokens(enabled); err != nil {
+		return nil, err
+	}
 	return enabled, nil
 }
 
 // ResolveAndFilter builds the repo list and applies the given filter.
 // When filter.IncludeDisabled is true, disabled/excluded repos are included in results.
+// Token placeholders are resolved only for the repos that survive filtering.
 func (r *Resolver) ResolveAndFilter(filter Filter) ([]provider.Repo, error) {
 	allRepos, err := r.resolveInternal()
 	if err != nil {
@@ -328,7 +327,33 @@ func (r *Resolver) ResolveAndFilter(filter Filter) ([]provider.Repo, error) {
 		allRepos = enabled
 	}
 
-	return ApplyFilter(allRepos, filter), nil
+	filtered := ApplyFilter(allRepos, filter)
+	if err := resolveRepoTokens(filtered); err != nil {
+		return nil, err
+	}
+	return filtered, nil
+}
+
+// resolveRepoTokens resolves ${ENV_VAR} token placeholders in place for the
+// given repos. Disabled/excluded repos are skipped. An error is returned only
+// when a repo that will actually be used references an unset environment
+// variable.
+func resolveRepoTokens(repos []provider.Repo) error {
+	for i := range repos {
+		r := &repos[i]
+		if r.DisabledReason != "" || r.Token == "" {
+			continue
+		}
+		resolved, err := config.ResolveToken(r.Token)
+		if err != nil {
+			if r.GroupName != "" {
+				return fmt.Errorf("group %q (resource %q): %w", r.GroupName, r.Resource, err)
+			}
+			return fmt.Errorf("repo %q (resource %q): %w", r.Name, r.Resource, err)
+		}
+		r.Token = resolved
+	}
+	return nil
 }
 
 // ApplyFilter filters a repo list by name, group, standalone repo names, or resource.
