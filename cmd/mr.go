@@ -124,7 +124,7 @@ func runMR(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get remote URL: %w", err)
 	}
 
-	providerName, serverURL, token, err := detectProvider(remoteURL)
+	providerName, serverURL, token, organizationID, err := detectProvider(remoteURL)
 	if err != nil {
 		return err
 	}
@@ -135,12 +135,9 @@ func runMR(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot extract repository path from remote URL: %s", remoteURL)
 	}
 
-	// Step 6: Handle Codeup (not supported)
-	if providerName == "codeup" {
-		webURL := buildCodeupWebURL(serverURL, repoPath)
-		fmt.Fprintf(os.Stderr, "\n  \u274C Codeup \u6682\u4E0D\u652F\u6301\u901A\u8FC7 API \u521B\u5EFA Merge Request\u3002\n")
-		fmt.Fprintf(os.Stderr, "  \u8BF7\u5728\u6D4F\u89C8\u5668\u4E2D\u624B\u52A8\u521B\u5EFA:\n  %s\n\n", webURL)
-		return nil
+	// Step 6: Codeup 需要 organization_id 才能调用 API；--web 模式不强制
+	if providerName == "codeup" && organizationID == "" && !mrWeb {
+		return fmt.Errorf("codeup: organization_id is required to create a Merge Request via API\nAdd organization_id to your codeup resource in .grepom.yml, or use --web to create in the browser")
 	}
 
 	// Step 7: Get MR/PR provider
@@ -209,9 +206,10 @@ func runMR(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Creating %s: %s → %s...\n", mrLabel(providerName), fromBranch, toBranch)
 
 	mr, err := mrProvider.CreateMergeRequest(context.Background(), mergerequest.CreateMergeRequestParams{
-		ServerURL:    serverURL,
-		Token:        token,
-		RepoPath:     repoPath,
+		ServerURL:      serverURL,
+		Token:          token,
+		RepoPath:       repoPath,
+		OrganizationID: organizationID,
 		Title:        title,
 		Description:  body,
 		SourceBranch: fromBranch,
@@ -236,8 +234,9 @@ func runMR(cmd *cobra.Command, args []string) error {
 
 // --- Provider detection ---
 
-// detectProvider determines the provider type, server URL, and token from a remote URL.
-func detectProvider(remoteURL string) (providerName string, serverURL string, token string, err error) {
+// detectProvider determines the provider type, server URL, token, and organization ID from a remote URL.
+// organizationID 仅 Codeup provider 使用（取自匹配 resource 的 organization_id 字段）。
+func detectProvider(remoteURL string) (providerName string, serverURL string, token string, organizationID string, err error) {
 	host := extractHost(remoteURL)
 
 	// Strategy 1: Try to match config resources
@@ -247,13 +246,13 @@ func detectProvider(remoteURL string) (providerName string, serverURL string, to
 			if res.URL == host {
 				resolvedToken, tokenErr := res.ResolvedToken()
 				if tokenErr != nil {
-					return "", "", "", fmt.Errorf("resource %q: %w", name, tokenErr)
+					return "", "", "", "", fmt.Errorf("resource %q: %w", name, tokenErr)
 				}
 				scheme := "https://"
 				if res.Scheme() == "http" {
 					scheme = "http://"
 				}
-				return res.Provider, scheme + res.URL, resolvedToken, nil
+				return res.Provider, scheme + res.URL, resolvedToken, res.OrganizationID, nil
 			}
 		}
 	}
@@ -262,15 +261,16 @@ func detectProvider(remoteURL string) (providerName string, serverURL string, to
 	switch host {
 	case "github.com":
 		token = os.Getenv("GREPOM_GITHUB_TOKEN")
-		return "github", "https://github.com", token, nil
+		return "github", "https://github.com", token, "", nil
 	case "gitlab.com":
 		token = os.Getenv("GREPOM_GITLAB_TOKEN")
-		return "gitlab", "https://gitlab.com", token, nil
+		return "gitlab", "https://gitlab.com", token, "", nil
 	case "codeup.aliyun.com":
-		return "codeup", "https://codeup.aliyun.com", "", nil
+		token = os.Getenv("GREPOM_CODEUP_TOKEN")
+		return "codeup", "https://codeup.aliyun.com", token, "", nil
 	}
 
-	return "", "", "", fmt.Errorf("cannot determine provider for host %q\nAdd a resource in your .grepom.yml config file, or set GREPOM_GITHUB_TOKEN / GREPOM_GITLAB_TOKEN environment variable", host)
+	return "", "", "", "", fmt.Errorf("cannot determine provider for host %q\nAdd a resource in your .grepom.yml config file, or set GREPOM_GITHUB_TOKEN / GREPOM_GITLAB_TOKEN environment variable", host)
 }
 
 // resolveToken tries to get a token for the given provider and host.
@@ -298,6 +298,10 @@ func resolveToken(providerName string, host string, cfg *config.Config) (string,
 		}
 	case "gitlab":
 		if token := os.Getenv("GREPOM_GITLAB_TOKEN"); token != "" {
+			return token, nil
+		}
+	case "codeup":
+		if token := os.Getenv("GREPOM_CODEUP_TOKEN"); token != "" {
 			return token, nil
 		}
 	}
@@ -444,10 +448,4 @@ func mrLabel(providerName string) string {
 		return "PR"
 	}
 	return "MR"
-}
-
-// buildCodeupWebURL builds a Codeup MR creation page URL.
-func buildCodeupWebURL(serverURL string, repoPath string) string {
-	base := strings.TrimRight(serverURL, "/")
-	return fmt.Sprintf("%s/%s/merge_requests/new", base, repoPath)
 }

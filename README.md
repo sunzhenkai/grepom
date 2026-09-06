@@ -15,7 +15,7 @@ Git 仓库编排器与管理器 — 通过单个 YAML 配置文件管理 GitLab 
 - **敏感信息扫描** — 内置 gitleaks 引擎，支持工作区和 git 历史扫描
 - **推送保护** — 推送前自动检测敏感信息，防止泄露
 - **交互式模式** — 菜单驱动的交互式操作界面
-- **MR/PR 创建** — 在 CLI 中直接创建 GitHub Pull Request 或 GitLab Merge Request，已有 MR/PR 时自动返回地址
+- **MR/PR 创建** — 在 CLI 中直接创建 GitHub Pull Request、GitLab Merge Request 或 Codeup 合并请求，已有 MR/PR 时自动返回地址
 - **服务进程管理** — 后台启动本地开发服务，查看状态、日志、停止进程，并提供 TUI 管理界面
 
 ## 安装
@@ -217,7 +217,7 @@ grepom push                         # 扫描后推送（无敏感信息时）
 grepom push -f                      # 发现敏感信息仍强制推送
 grepom push -- origin main          # 透传参数给 git push
 
-# MR/PR 创建
+# MR/PR 创建（支持 GitLab / GitHub / Codeup；Codeup 需在 resource 中配置 organization_id）
 grepom mr                           # 自动检测并创建 MR/PR（已有则返回地址）
 grepom mr --from feat-x --to main   # 指定源分支和目标分支
 grepom mr --title "Add dark mode"   # 自定义标题
@@ -225,7 +225,7 @@ grepom mr --draft                   # 创建草稿 MR/PR
 grepom mr --web                     # 在浏览器中打开创建页面
 grepom pr                           # 'mr' 的别名
 
-# CI/CD 管道
+# CI/CD 管道（支持 GitLab / GitHub；Codeup 经云效 Flow 查询，需配置 organization_id）
 grepom watch                        # 自动推断当前仓库，监控最新管道
 grepom watch web-app                # 监控指定仓库的最新管道
 grepom watch --id 1234              # 监控指定管道 ID

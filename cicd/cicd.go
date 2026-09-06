@@ -41,18 +41,20 @@ type PipelineProvider interface {
 
 // ListPipelinesParams 包含列出 pipeline 的参数。
 type ListPipelinesParams struct {
-	ServerURL string
-	Token     string
-	RepoPath  string // "org/fe/web-app" 或 "owner/repo"
-	Limit     int
+	ServerURL      string
+	Token          string
+	RepoPath       string // "org/fe/web-app" 或 "owner/repo"
+	Limit          int
+	OrganizationID string // optional, required by Codeup provider
 }
 
 // GetPipelineParams 包含获取单个 pipeline 的参数。
 type GetPipelineParams struct {
-	ServerURL  string
-	Token      string
-	RepoPath   string
-	PipelineID int
+	ServerURL      string
+	Token          string
+	RepoPath       string
+	PipelineID     int
+	OrganizationID string // optional, required by Codeup provider
 }
 
 // --- 注册表 ---

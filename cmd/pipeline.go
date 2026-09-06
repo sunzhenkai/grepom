@@ -23,11 +23,12 @@ var (
 // 由 resolvePipelineInput 或 resolveCurrentRepoPipeline 构造，
 // 供 runWatchLoop 使用。
 type WatchTarget struct {
-	Provider  cicd.PipelineProvider
-	ServerURL string
-	RepoPath  string // 远程路径，如 "org/team/repo"
-	Token     string
-	RepoName  string // 用于显示的仓库名称
+	Provider       cicd.PipelineProvider
+	ServerURL      string
+	RepoPath       string // 远程路径，如 "org/team/repo"
+	Token          string
+	RepoName       string // 用于显示的仓库名称
+	OrganizationID string // 仅 Codeup provider 使用（云效 Flow 查询需要）
 }
 
 var pipelineCmd = &cobra.Command{
@@ -68,27 +69,27 @@ func init() {
 }
 
 // resolvePipelineInput 是 list 和 watch 共用的 repo 解析逻辑。
-// 返回 PipelineProvider、ServerURL、远程路径和 Token。
-func resolvePipelineInput(cfg *config.Config, repoName string) (cicd.PipelineProvider, string, string, string, error) {
+// 返回 PipelineProvider、ServerURL、远程路径、Token 和 OrganizationID（仅 Codeup 使用）。
+func resolvePipelineInput(cfg *config.Config, repoName string) (cicd.PipelineProvider, string, string, string, string, error) {
 	resolver := repo.NewResolver(cfg)
 	repos, err := resolver.ResolveAndFilter(repo.Filter{Name: repoName})
 	if err != nil {
-		return nil, "", "", "", err
+		return nil, "", "", "", "", err
 	}
 
 	if len(repos) == 0 {
-		return nil, "", "", "", fmt.Errorf("repo not found: %s", repoName)
+		return nil, "", "", "", "", fmt.Errorf("repo not found: %s", repoName)
 	}
 
 	r := repos[0]
 
 	if r.Resource == "" {
-		return nil, "", "", "", fmt.Errorf("repo %q has no resource binding, cannot query pipelines", repoName)
+		return nil, "", "", "", "", fmt.Errorf("repo %q has no resource binding, cannot query pipelines", repoName)
 	}
 
 	res, ok := cfg.Resources[r.Resource]
 	if !ok {
-		return nil, "", "", "", fmt.Errorf("resource %q not found", r.Resource)
+		return nil, "", "", "", "", fmt.Errorf("resource %q not found", r.Resource)
 	}
 
 	remotePath := repo.ExtractRemotePath(r.CloneURL)
@@ -96,20 +97,20 @@ func resolvePipelineInput(cfg *config.Config, repoName string) (cicd.PipelinePro
 		remotePath = repo.ExtractRemotePath(r.SSHURL)
 	}
 	if remotePath == "" {
-		return nil, "", "", "", fmt.Errorf("cannot determine remote path for repo %q", repoName)
+		return nil, "", "", "", "", fmt.Errorf("cannot determine remote path for repo %q", repoName)
 	}
 
 	provider, err := cicd.Get(res.Provider)
 	if err != nil {
-		return nil, "", "", "", err
+		return nil, "", "", "", "", err
 	}
 
 	resolvedToken, err := res.ResolvedToken()
 	if err != nil {
-		return nil, "", "", "", fmt.Errorf("resource %q: %w", r.Resource, err)
+		return nil, "", "", "", "", fmt.Errorf("resource %q: %w", r.Resource, err)
 	}
 
-	return provider, res.APIURL(), remotePath, resolvedToken, nil
+	return provider, res.APIURL(), remotePath, resolvedToken, res.OrganizationID, nil
 }
 
 func runPipelineList(cmd *cobra.Command, args []string) error {
@@ -119,7 +120,7 @@ func runPipelineList(cmd *cobra.Command, args []string) error {
 	}
 
 	repoName := args[0]
-	provider, serverURL, remotePath, token, err := resolvePipelineInput(cfg, repoName)
+	provider, serverURL, remotePath, token, organizationID, err := resolvePipelineInput(cfg, repoName)
 	if err != nil {
 		return err
 	}
@@ -133,10 +134,11 @@ func runPipelineList(cmd *cobra.Command, args []string) error {
 	}
 
 	pipelines, err := provider.ListPipelines(cmd.Context(), cicd.ListPipelinesParams{
-		ServerURL: serverURL,
-		Token:     token,
-		RepoPath:  remotePath,
-		Limit:     limit,
+		ServerURL:      serverURL,
+		Token:          token,
+		RepoPath:       remotePath,
+		Limit:          limit,
+		OrganizationID: organizationID,
 	})
 	if err != nil {
 		return err
@@ -166,17 +168,18 @@ func runPipelineWatch(cmd *cobra.Command, args []string) error {
 	}
 
 	repoName := args[0]
-	provider, serverURL, remotePath, token, err := resolvePipelineInput(cfg, repoName)
+	provider, serverURL, remotePath, token, organizationID, err := resolvePipelineInput(cfg, repoName)
 	if err != nil {
 		return err
 	}
 
 	target := WatchTarget{
-		Provider:  provider,
-		ServerURL: serverURL,
-		RepoPath:  remotePath,
-		Token:     token,
-		RepoName:  repoName,
+		Provider:       provider,
+		ServerURL:      serverURL,
+		RepoPath:       remotePath,
+		Token:          token,
+		RepoName:       repoName,
+		OrganizationID: organizationID,
 	}
 
 	return runWatchLoop(target, pipelineID, cmd)
@@ -190,10 +193,11 @@ func runWatchLoop(target WatchTarget, targetID int, cmd *cobra.Command) error {
 	if targetID == 0 {
 		// 获取最新 pipeline
 		pipelines, err := target.Provider.ListPipelines(cmd.Context(), cicd.ListPipelinesParams{
-			ServerURL: target.ServerURL,
-			Token:     target.Token,
-			RepoPath:  target.RepoPath,
-			Limit:     1,
+			ServerURL:      target.ServerURL,
+			Token:          target.Token,
+			RepoPath:       target.RepoPath,
+			Limit:          1,
+			OrganizationID: target.OrganizationID,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to find latest pipeline: %w", err)
@@ -213,10 +217,11 @@ func runWatchLoop(target WatchTarget, targetID int, cmd *cobra.Command) error {
 
 	// 立即查询一次
 	pipeline, err := target.Provider.GetPipeline(ctx, cicd.GetPipelineParams{
-		ServerURL:  target.ServerURL,
-		Token:      target.Token,
-		RepoPath:   target.RepoPath,
-		PipelineID: targetID,
+		ServerURL:      target.ServerURL,
+		Token:          target.Token,
+		RepoPath:       target.RepoPath,
+		PipelineID:     targetID,
+		OrganizationID: target.OrganizationID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get pipeline: %w", err)
@@ -263,10 +268,11 @@ func runWatchLoop(target WatchTarget, targetID int, cmd *cobra.Command) error {
 
 		// 轮询
 		pipeline, err = target.Provider.GetPipeline(ctx, cicd.GetPipelineParams{
-			ServerURL:  target.ServerURL,
-			Token:      target.Token,
-			RepoPath:   target.RepoPath,
-			PipelineID: targetID,
+			ServerURL:      target.ServerURL,
+			Token:          target.Token,
+			RepoPath:       target.RepoPath,
+			PipelineID:     targetID,
+			OrganizationID: target.OrganizationID,
 		})
 		if err != nil {
 			fmt.Println()

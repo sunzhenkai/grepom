@@ -21,9 +21,10 @@ type MergeRequest struct {
 
 // CreateMergeRequestParams contains the parameters for creating a MR/PR.
 type CreateMergeRequestParams struct {
-	ServerURL    string
-	Token        string
-	RepoPath     string // "owner/repo" or "group/project"
+	ServerURL      string
+	Token          string
+	RepoPath       string // "owner/repo" or "group/project"
+	OrganizationID string // optional, required by Codeup provider
 	Title        string
 	Description  string
 	SourceBranch string

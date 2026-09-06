@@ -57,17 +57,18 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		}
 
 		repoName := args[0]
-		provider, serverURL, remotePath, token, resolveErr := resolvePipelineInput(cfg, repoName)
+		provider, serverURL, remotePath, token, organizationID, resolveErr := resolvePipelineInput(cfg, repoName)
 		if resolveErr != nil {
 			return resolveErr
 		}
 
 		target = WatchTarget{
-			Provider:  provider,
-			ServerURL: serverURL,
-			RepoPath:  remotePath,
-			Token:     token,
-			RepoName:  repoName,
+			Provider:       provider,
+			ServerURL:      serverURL,
+			RepoPath:       remotePath,
+			Token:          token,
+			RepoName:       repoName,
+			OrganizationID: organizationID,
 		}
 	} else {
 		// 自动推断
@@ -115,16 +116,17 @@ func resolveCurrentRepoPipeline() (WatchTarget, error) {
 				}
 				if rp == remotePath {
 					// 精确匹配：使用该 repo 的 resource 信息
-					provider, serverURL, resolvedRemotePath, token, inputErr := resolvePipelineInput(cfg, r.Name)
+					provider, serverURL, resolvedRemotePath, token, organizationID, inputErr := resolvePipelineInput(cfg, r.Name)
 					if inputErr != nil {
 						return WatchTarget{}, inputErr
 					}
 					return WatchTarget{
-						Provider:  provider,
-						ServerURL: serverURL,
-						RepoPath:  resolvedRemotePath,
-						Token:     token,
-						RepoName:  r.Name,
+						Provider:       provider,
+						ServerURL:      serverURL,
+						RepoPath:       resolvedRemotePath,
+						Token:          token,
+						RepoName:       r.Name,
+						OrganizationID: organizationID,
 					}, nil
 				}
 			}
@@ -147,11 +149,12 @@ func resolveCurrentRepoPipeline() (WatchTarget, error) {
 				}
 
 				return WatchTarget{
-					Provider:  provider,
-					ServerURL: res.APIURL(),
-					RepoPath:  remotePath,
-					Token:     resolvedToken,
-					RepoName:  repoName,
+					Provider:       provider,
+					ServerURL:      res.APIURL(),
+					RepoPath:       remotePath,
+					Token:          resolvedToken,
+					RepoName:       repoName,
+					OrganizationID: res.OrganizationID,
 				}, nil
 			}
 		}

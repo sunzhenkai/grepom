@@ -15,7 +15,7 @@ Git Repository Orchestrator & Manager — manage multiple git repositories acros
 - **Secret scanning** — built-in gitleaks engine with workspace and git history scanning
 - **Push guard** — automatically detect secrets before pushing
 - **Interactive mode** — menu-driven interactive UI
-- **MR/PR creation** — create GitHub Pull Requests or GitLab Merge Requests from the CLI; returns existing MR/PR address if one is already open
+- **MR/PR creation** — create GitHub Pull Requests, GitLab Merge Requests, or Codeup merge requests from the CLI; returns existing MR/PR address if one is already open
 - **Service process management** — start local dev services in the background, inspect status/logs, stop processes, and manage them via TUI
 
 ## Install
@@ -219,7 +219,7 @@ grepom push                         # Scan and push (if no secrets found)
 grepom push -f                      # Force push even if secrets found
 grepom push -- origin main          # Pass arguments through to git push
 
-# MR/PR Creation
+# MR/PR Creation (GitLab / GitHub / Codeup; Codeup requires organization_id in the resource)
 grepom mr                           # Auto-detect and create MR/PR (returns existing if already open)
 grepom mr --from feat-x --to main   # Specify source and target branches
 grepom mr --title "Add dark mode"   # Custom title
@@ -227,7 +227,7 @@ grepom mr --draft                   # Create as draft MR/PR
 grepom mr --web                     # Open browser to create
 grepom pr                           # Alias for 'mr'
 
-# CI/CD Pipelines
+# CI/CD Pipelines (GitLab / GitHub; Codeup via Yunxiao Flow, requires organization_id)
 grepom watch                        # Auto-detect repo and watch latest pipeline
 grepom watch web-app                # Watch a specific repo's latest pipeline
 grepom watch --id 1234              # Watch a specific pipeline by ID
