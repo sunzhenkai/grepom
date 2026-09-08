@@ -45,6 +45,7 @@ type ListPipelinesParams struct {
 	Token          string
 	RepoPath       string // "org/fe/web-app" 或 "owner/repo"
 	Limit          int
+	SHA            string // 可选：按 commit SHA 过滤（完整 40 位；空值表示不过滤。GitHub= head_sha，GitLab= sha，Codeup 忽略）
 	OrganizationID string // optional, required by Codeup provider
 }
 

@@ -80,6 +80,21 @@ func PushTag(path, remote, tag string) error {
 	return nil
 }
 
+// TagCommitSHA returns the full commit SHA a tag points to.
+// Annotated tags are dereferenced via `<tag>^{commit}`.
+func TagCommitSHA(path, tag string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "rev-parse", tag+"^{commit}")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse %s^{{commit}}: %w", tag, err)
+	}
+	sha := strings.TrimSpace(string(out))
+	if sha == "" {
+		return "", fmt.Errorf("git rev-parse %s^{{commit}}: empty output", tag)
+	}
+	return sha, nil
+}
+
 // ListRemotes returns the names of all remotes.
 func ListRemotes(path string) ([]string, error) {
 	cmd := exec.Command("git", "-C", path, "remote")

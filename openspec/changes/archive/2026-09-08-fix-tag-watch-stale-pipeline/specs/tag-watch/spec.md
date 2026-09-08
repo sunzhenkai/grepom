@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: tag 命令 -w/--watch 参数
 
@@ -28,17 +28,7 @@
 - **WHEN** 用户运行 `grepom tag -w`，tag 创建成功，但 `resolveCurrentRepoPipeline()` 三级 fallback 均失败
 - **THEN** 系统 SHALL 输出 tag 创建成功的消息，然后输出与 `grepom watch` 相同的详细错误信息（包含诊断和建议），并以非零退出码退出
 
-### Requirement: -w 复用 watch 推断和循环逻辑
-
-系统 SHALL 确保 `tag -w` 的 watch 行为与 `grepom watch` 命令完全一致，复用 `resolveCurrentRepoPipeline()` 和 `runWatchLoop()` 函数。
-
-#### Scenario: 三级 fallback 推断行为一致
-- **WHEN** 用户通过 `grepom tag -w` 或 `grepom watch` 在同一目录执行
-- **THEN** 两者的 repo 推断逻辑 SHALL 完全一致（Level 1 配置匹配 → Level 2 host 匹配 → Level 3 公共域名 + 环境变量）
-
-#### Scenario: watch 循环行为一致
-- **WHEN** 用户通过 `grepom tag -w` 进入 watch
-- **THEN** 轮询间隔、状态行格式、终态退出行为、Ctrl+C 处理 SHALL 与 `grepom watch` 完全一致
+## ADDED Requirements
 
 ### Requirement: -w 监控新 tag 对应的 pipeline
 
@@ -68,14 +58,10 @@
 - **WHEN** 用户运行 `grepom tag -w --id 1234`
 - **THEN** 系统 SHALL 忽略 `--id` 参数或报错提示不支持，始终监控新 tag 对应的 pipeline
 
-### Requirement: -w 不绑定 -p
+## REMOVED Requirements
 
-`-w` 参数 SHALL 独立于 `-p`（push）参数，不隐含推送行为。
+### Requirement: -w 始终监控最新 pipeline
 
-#### Scenario: 仅使用 -w 不使用 -p
-- **WHEN** 用户运行 `grepom tag -w`（不带 -p）
-- **THEN** 系统 SHALL 创建 tag 本地（可能通过 TTY 提问是否推送），创建后进入 watch
+**Reason**: "取列表第一条当作最新"正是本缺陷的根因——provider 侧 pipeline 异步创建期间，列表第一条是上一个 tag 的已终态 run，导致 `tag -pw` 显示旧版本 pipeline 并立即退出。监控目标必须绑定到新 tag 的 commit SHA，而非任意"当前最新"。
 
-#### Scenario: -w 不隐含推送
-- **WHEN** 用户运行 `grepom tag -w`
-- **THEN** 系统 SHALL NOT 自动推送 tag，推送行为仍由 `-p` 或 TTY 确认控制
+**Migration**: `tag -w` 改为按新 tag 指向的 commit SHA 绑定监控目标（见 ADDED Requirement "-w 监控新 tag 对应的 pipeline"）；`grepom watch` 与 `grepom pipeline watch <repo>`（不带 --id）仍保持"监控最新 pipeline"语义，行为不变。

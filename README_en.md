@@ -233,7 +233,7 @@ grepom watch web-app                # Watch a specific repo's latest pipeline
 grepom watch --id 1234              # Watch a specific pipeline by ID
 grepom pipeline list <repo-name>    # List pipelines for a repo
 grepom pipeline watch <repo-name>   # Watch pipeline status in real-time
-grepom tag -w                       # Create version tag, then watch pipeline status
+grepom tag -w                       # Create version tag, then watch that tag's pipeline (bound by commit SHA, waits up to 60s, errors on timeout)
 
 # Service process management
 grepom svc run -- make dev         # Start a service in the current directory (default name = dirname)

@@ -5,9 +5,49 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 )
+
+func TestGitLabPipelineProvider_ListPipelines_SHAFilter(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]gitlabPipeline{})
+	}))
+	defer server.Close()
+
+	provider := &GitLabPipelineProvider{}
+
+	// With SHA: sha parameter must be present.
+	if _, err := provider.ListPipelines(context.Background(), ListPipelinesParams{
+		ServerURL: server.URL,
+		Token:     "t",
+		RepoPath:  "org/repo",
+		Limit:     1,
+		SHA:       "abc123def456abc123def456abc123def456abc",
+	}); err != nil {
+		t.Fatalf("ListPipelines(SHA): %v", err)
+	}
+	if gotQuery.Get("sha") != "abc123def456abc123def456abc123def456abc" {
+		t.Errorf("query with SHA = %v, want sha parameter", gotQuery)
+	}
+
+	// Without SHA: no sha parameter.
+	if _, err := provider.ListPipelines(context.Background(), ListPipelinesParams{
+		ServerURL: server.URL,
+		Token:     "t",
+		RepoPath:  "org/repo",
+		Limit:     1,
+	}); err != nil {
+		t.Fatalf("ListPipelines(no SHA): %v", err)
+	}
+	if _, ok := gotQuery["sha"]; ok {
+		t.Errorf("query without SHA = %v, want no sha parameter", gotQuery)
+	}
+}
 
 func TestGitLabPipelineProvider_ListPipelines(t *testing.T) {
 	response := []gitlabPipeline{

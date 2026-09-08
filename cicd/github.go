@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -56,6 +57,9 @@ func (p *GitHubPipelineProvider) ListPipelines(ctx context.Context, params ListP
 	apiBase := githubAPIURL(params.ServerURL)
 	apiURL := fmt.Sprintf("%s/repos/%s/actions/runs?per_page=%d",
 		apiBase, params.RepoPath, params.Limit)
+	if params.SHA != "" {
+		apiURL += "&head_sha=" + url.QueryEscape(params.SHA)
+	}
 
 	var resp githubWorkflowRunsResponse
 	if err := p.get(ctx, params.Token, apiURL, &resp); err != nil {

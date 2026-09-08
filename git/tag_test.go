@@ -1,6 +1,8 @@
 package git
 
 import (
+	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -212,5 +214,67 @@ func TestFormatTTag_ZeroIter(t *testing.T) {
 	got := FormatTTag(0, 1, 2, 0)
 	if got != "t0.1.2.0" {
 		t.Errorf("FormatTTag(0,1,2,0) = %q, want %q", got, "t0.1.2.0")
+	}
+}
+
+// --- TestTagCommitSHA ---
+
+// newTagTestRepo creates an empty-commit git repo and returns its path and HEAD SHA.
+func newTagTestRepo(t *testing.T) (dir, headSHA string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir = t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	run("commit", "--allow-empty", "-m", "init")
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	return dir, strings.TrimSpace(string(out))
+}
+
+func TestTagCommitSHA_LightweightTag(t *testing.T) {
+	dir, head := newTagTestRepo(t)
+	if err := CreateTag(dir, "v0.1.0"); err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	sha, err := TagCommitSHA(dir, "v0.1.0")
+	if err != nil {
+		t.Fatalf("TagCommitSHA: %v", err)
+	}
+	if sha != head {
+		t.Errorf("TagCommitSHA = %q, want HEAD %q", sha, head)
+	}
+}
+
+func TestTagCommitSHA_AnnotatedTagDereferences(t *testing.T) {
+	dir, head := newTagTestRepo(t)
+	if err := CreateAnnotatedTag(dir, "v0.2.0", "release"); err != nil {
+		t.Fatalf("CreateAnnotatedTag: %v", err)
+	}
+	sha, err := TagCommitSHA(dir, "v0.2.0")
+	if err != nil {
+		t.Fatalf("TagCommitSHA: %v", err)
+	}
+	if sha != head {
+		t.Errorf("TagCommitSHA = %q, want commit %q (annotated tag object must be dereferenced)", sha, head)
+	}
+}
+
+func TestTagCommitSHA_MissingTag(t *testing.T) {
+	dir, _ := newTagTestRepo(t)
+	if _, err := TagCommitSHA(dir, "v9.9.9"); err == nil {
+		t.Error("expected error for missing tag, got nil")
 	}
 }

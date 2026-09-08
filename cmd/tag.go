@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
@@ -92,13 +91,14 @@ func runTag(cmd *cobra.Command, args []string) error {
 	// Compute next v version
 	major, minor, patch = gitpkg.NextVPatch(major, minor, patch)
 
+	var newTag string
 	var tagErr error
 	if tagTest {
 		// t version: first 3 digits follow v calculation, 4th digit is independent
-		tagErr = runTTag(major, minor, patch, latestVTag)
+		newTag, tagErr = runTTag(major, minor, patch, latestVTag)
 	} else {
 		// v version
-		tagErr = runVTag(major, minor, patch, latestVTag)
+		newTag, tagErr = runVTag(major, minor, patch, latestVTag)
 	}
 
 	// If tag creation failed, return the error without watching
@@ -111,15 +111,21 @@ func runTag(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// If -w/--watch is set, watch the latest pipeline after tag creation
+	// If -w/--watch is set, watch the new tag's pipeline (SHA-bound)
 	if tagWatch {
 		target, resolveErr := resolveCurrentRepoPipeline()
 		if resolveErr != nil {
 			fmt.Printf("\nTag created successfully, but failed to auto-detect pipeline:\n%v\n", resolveErr)
 			return resolveErr
 		}
-		fmt.Println("Waiting 1s for GitLab to create pipeline...")
-		time.Sleep(time.Second)
+		// 绑定监控目标：解析新 tag 指向的 commit SHA，
+		// watch 会轮询等待该 SHA 的 pipeline 出现，而非盲取最新。
+		sha, shaErr := gitpkg.TagCommitSHA(".", newTag)
+		if shaErr != nil {
+			return fmt.Errorf("tag created, but failed to resolve its commit SHA: %w", shaErr)
+		}
+		target.WatchTag = newTag
+		target.WatchSHA = sha
 		return runWatchLoop(target, 0, cmd)
 	}
 
@@ -127,14 +133,14 @@ func runTag(cmd *cobra.Command, args []string) error {
 }
 
 // runVTag computes, creates, and optionally pushes a v tag.
-func runVTag(major, minor, patch int, latestVTag string) error {
+func runVTag(major, minor, patch int, latestVTag string) (string, error) {
 	newTag := gitpkg.FormatVTag(major, minor, patch)
 
 	// Conflict detection: auto-increment until we find an unused tag
 	for i := 0; i < maxConflictRetries; i++ {
 		exists, err := gitpkg.TagExists(".", newTag)
 		if err != nil {
-			return fmt.Errorf("failed to check tag existence: %w", err)
+			return "", fmt.Errorf("failed to check tag existence: %w", err)
 		}
 		if !exists {
 			break
@@ -154,22 +160,22 @@ func runVTag(major, minor, patch int, latestVTag string) error {
 	// Dry-run mode
 	if tagDryRun {
 		fmt.Printf("[dry-run] Would create tag %s locally\n", newTag)
-		return nil
+		return "", nil
 	}
 
 	// Create tag
 	if err := createTag(newTag); err != nil {
-		return err
+		return "", err
 	}
 
 	fmt.Printf("✓ created locally\n")
 
 	// Handle push
-	return handlePush(newTag)
+	return newTag, handlePush(newTag)
 }
 
 // runTTag computes, creates, and optionally pushes a t tag.
-func runTTag(major, minor, patch int, latestVTag string) error {
+func runTTag(major, minor, patch int, latestVTag string) (string, error) {
 	// The first 3 digits follow v calculation
 	// Find matching t{M}.{m}.{p}.* tags to determine 4th digit
 	iter := 0
@@ -177,7 +183,7 @@ func runTTag(major, minor, patch int, latestVTag string) error {
 	pattern := fmt.Sprintf("t%d.%d.%d.*", major, minor, patch)
 	tTags, err := gitpkg.ListTagsByTime(".", pattern)
 	if err != nil {
-		return fmt.Errorf("failed to list t tags: %w", err)
+		return "", fmt.Errorf("failed to list t tags: %w", err)
 	}
 
 	if len(tTags) > 0 {
@@ -194,7 +200,7 @@ func runTTag(major, minor, patch int, latestVTag string) error {
 	for i := 0; i < maxConflictRetries; i++ {
 		exists, err := gitpkg.TagExists(".", newTag)
 		if err != nil {
-			return fmt.Errorf("failed to check tag existence: %w", err)
+			return "", fmt.Errorf("failed to check tag existence: %w", err)
 		}
 		if !exists {
 			break
@@ -214,18 +220,18 @@ func runTTag(major, minor, patch int, latestVTag string) error {
 	// Dry-run mode
 	if tagDryRun {
 		fmt.Printf("[dry-run] Would create tag %s locally\n", newTag)
-		return nil
+		return "", nil
 	}
 
 	// Create tag
 	if err := createTag(newTag); err != nil {
-		return err
+		return "", err
 	}
 
 	fmt.Printf("✓ created locally\n")
 
 	// Handle push
-	return handlePush(newTag)
+	return newTag, handlePush(newTag)
 }
 
 // createTag creates either a lightweight or annotated tag.

@@ -51,6 +51,9 @@ func (p *GitLabPipelineProvider) ListPipelines(ctx context.Context, params ListP
 	encodedPath := url.PathEscape(params.RepoPath)
 	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/pipelines?per_page=%d&order_by=id&sort=desc",
 		params.ServerURL, encodedPath, params.Limit)
+	if params.SHA != "" {
+		apiURL += "&sha=" + url.QueryEscape(params.SHA)
+	}
 
 	var pipelines []gitlabPipeline
 	if err := p.get(ctx, params.Token, apiURL, &pipelines); err != nil {

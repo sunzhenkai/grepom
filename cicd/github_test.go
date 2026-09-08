@@ -96,6 +96,45 @@ func TestGitHubPipelineProvider_ListPipelines(t *testing.T) {
 	}
 }
 
+func TestGitHubPipelineProvider_ListPipelines_SHAFilter(t *testing.T) {
+	var gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(githubWorkflowRunsResponse{})
+	}))
+	defer server.Close()
+
+	provider := &GitHubPipelineProvider{}
+
+	// With SHA: head_sha parameter must be present.
+	if _, err := provider.ListPipelines(context.Background(), ListPipelinesParams{
+		ServerURL: server.URL,
+		Token:     "t",
+		RepoPath:  "owner/repo",
+		Limit:     1,
+		SHA:       "abc123def456abc123def456abc123def456abc",
+	}); err != nil {
+		t.Fatalf("ListPipelines(SHA): %v", err)
+	}
+	if gotQuery != "per_page=1&head_sha=abc123def456abc123def456abc123def456abc" {
+		t.Errorf("query with SHA = %q, want head_sha parameter", gotQuery)
+	}
+
+	// Without SHA: URL must stay unchanged (no head_sha).
+	if _, err := provider.ListPipelines(context.Background(), ListPipelinesParams{
+		ServerURL: server.URL,
+		Token:     "t",
+		RepoPath:  "owner/repo",
+		Limit:     1,
+	}); err != nil {
+		t.Fatalf("ListPipelines(no SHA): %v", err)
+	}
+	if gotQuery != "per_page=1" {
+		t.Errorf("query without SHA = %q, want %q", gotQuery, "per_page=1")
+	}
+}
+
 func TestGitHubPipelineProvider_GetPipeline(t *testing.T) {
 	response := githubWorkflowRun{
 		ID:           5678,

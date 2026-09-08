@@ -114,6 +114,28 @@ func TestCodeupPipeline_ListMatchedSingle(t *testing.T) {
 	}
 }
 
+func TestCodeupPipeline_SHAFieldIgnored(t *testing.T) {
+	// Codeup（云效 Flow）无法按 commit SHA 过滤：SHA 字段必须被忽略且不影响查询结果。
+	pipelines := []map[string]interface{}{
+		pipelineJSON(100, "ci", "https://codeup.aliyun.com/wii/solo/grepom.git"),
+	}
+	runs := map[int64][]map[string]interface{}{
+		100: {runJSON(5001, "SUCCESS", 1690000000000, 1690000154000, "master", "abc1234567890")},
+	}
+	ts := newFlowTestServer(t, pipelines, runs)
+
+	params := flowParams(ts.server.URL)
+	params.SHA = "bbb2222ccc3333ddd4444eee5555fff6666aaa77"
+	p := &CodeupPipelineProvider{}
+	result, err := p.ListPipelines(context.Background(), params)
+	if err != nil {
+		t.Fatalf("ListPipelines(SHA set): %v", err)
+	}
+	if len(result) != 1 || result[0].ID != 5001 {
+		t.Fatalf("result = %+v, want 1 run #5001 (SHA 必须不影响查询)", result)
+	}
+}
+
 func TestCodeupPipeline_MatchSSHSource(t *testing.T) {
 	pipelines := []map[string]interface{}{
 		pipelineJSON(100, "ci", "git@codeup.aliyun.com:wii/solo/grepom.git"),

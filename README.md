@@ -231,7 +231,7 @@ grepom watch web-app                # 监控指定仓库的最新管道
 grepom watch --id 1234              # 监控指定管道 ID
 grepom pipeline list <repo-name>    # 列出仓库的管道
 grepom pipeline watch <repo-name>   # 实时监控管道状态
-grepom tag -w                       # 创建版本标签后自动监控管道状态
+grepom tag -w                       # 创建版本标签后自动监控该标签对应的管道（按 commit SHA 绑定，最多等待 60 秒，超时报错）
 
 # 服务进程管理
 grepom svc run -- make dev         # 在当前目录后台启动服务（默认服务名为目录名）

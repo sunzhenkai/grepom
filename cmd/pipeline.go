@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
+
+	"context"
 
 	"github.com/spf13/cobra"
 	"github.com/wii/grepom/cicd"
@@ -29,7 +32,15 @@ type WatchTarget struct {
 	Token          string
 	RepoName       string // 用于显示的仓库名称
 	OrganizationID string // 仅 Codeup provider 使用（云效 Flow 查询需要）
+	WatchTag       string // 可选：tag -w 场景下的新 tag 名（用于提示信息）
+	WatchSHA       string // 可选：tag -w 场景下绑定的 commit SHA；非空时先等待该 SHA 的 pipeline 出现
 }
+
+// SHA 等待阶段的参数（var 便于测试注入更小的时间窗口）。
+var (
+	watchSHAWaitTimeout = 60 * time.Second
+	watchSHAPollEvery   = 2 * time.Second
+)
 
 var pipelineCmd = &cobra.Command{
 	Use:   "pipeline",
@@ -188,32 +199,47 @@ func runPipelineWatch(cmd *cobra.Command, args []string) error {
 // runWatchLoop 是 pipeline watch 和顶级 watch 命令共享的 watch 循环。
 // target 包含 pipeline 查询所需的全部信息。
 // targetID 为 0 时表示监控最新 pipeline，否则监控指定 ID。
+// target.WatchSHA 非空（tag -w 场景）时，先按 SHA 轮询等待目标 pipeline
+// 出现，绝不退而监控其他 pipeline（避免 provider 异步创建期间的竞态）。
 func runWatchLoop(target WatchTarget, targetID int, cmd *cobra.Command) error {
+	// 设置 signal handling：Ctrl+C 优雅退出（覆盖等待阶段与 watch 循环）
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// 确定要 watch 的 pipeline ID
 	if targetID == 0 {
-		// 获取最新 pipeline
-		pipelines, err := target.Provider.ListPipelines(cmd.Context(), cicd.ListPipelinesParams{
-			ServerURL:      target.ServerURL,
-			Token:          target.Token,
-			RepoPath:       target.RepoPath,
-			Limit:          1,
-			OrganizationID: target.OrganizationID,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to find latest pipeline: %w", err)
+		// tag -w：SHA 绑定，等待新 tag 的 pipeline 出现
+		if target.WatchSHA != "" {
+			id, err := waitForPipelineBySHA(ctx, target)
+			if err != nil {
+				return err
+			}
+			if id == 0 {
+				// 等待阶段被 Ctrl+C 中断，已输出提示，优雅退出
+				return nil
+			}
+			targetID = id
+		} else {
+			// 获取最新 pipeline
+			pipelines, err := target.Provider.ListPipelines(ctx, cicd.ListPipelinesParams{
+				ServerURL:      target.ServerURL,
+				Token:          target.Token,
+				RepoPath:       target.RepoPath,
+				Limit:          1,
+				OrganizationID: target.OrganizationID,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to find latest pipeline: %w", err)
+			}
+			if len(pipelines) == 0 {
+				fmt.Printf("No pipelines found for %s.\n", target.RepoName)
+				return nil
+			}
+			targetID = pipelines[0].ID
 		}
-		if len(pipelines) == 0 {
-			fmt.Printf("No pipelines found for %s.\n", target.RepoName)
-			return nil
-		}
-		targetID = pipelines[0].ID
 	}
 
 	fmt.Printf("Watching pipeline #%d for %s... (Ctrl+C to stop)\n", targetID, target.RepoName)
-
-	// 设置 signal handling：Ctrl+C 优雅退出
-	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	// 立即查询一次
 	pipeline, err := target.Provider.GetPipeline(ctx, cicd.GetPipelineParams{
@@ -227,6 +253,64 @@ func runWatchLoop(target WatchTarget, targetID int, cmd *cobra.Command) error {
 		return fmt.Errorf("failed to get pipeline: %w", err)
 	}
 
+	return runWatchPollLoop(target, targetID, ctx, pipeline)
+}
+
+// waitForPipelineBySHA 按 SHA 轮询等待目标 pipeline 出现。
+// 命中返回其 ID；等待阶段被中断（Ctrl+C）返回 (0, nil)；超时返回错误。
+func waitForPipelineBySHA(ctx context.Context, target WatchTarget) (int, error) {
+	sha := strings.ToLower(target.WatchSHA)
+	shaShort := sha
+	if len(shaShort) > 7 {
+		shaShort = shaShort[:7]
+	}
+	if target.WatchTag != "" {
+		fmt.Printf("Waiting for pipeline of %s (%s)...\n", target.WatchTag, shaShort)
+	}
+
+	deadline := time.Now().Add(watchSHAWaitTimeout)
+	for {
+		pipelines, err := target.Provider.ListPipelines(ctx, cicd.ListPipelinesParams{
+			ServerURL:      target.ServerURL,
+			Token:          target.Token,
+			RepoPath:       target.RepoPath,
+			Limit:          5,
+			SHA:            target.WatchSHA,
+			OrganizationID: target.OrganizationID,
+		})
+		if err == nil {
+			// 双保险：provider 过滤之外再做本地前缀比对（兼容不支持
+			// SHA 过滤的 provider，如 Codeup）。
+			for _, p := range pipelines {
+				if p.SHA != "" && strings.HasPrefix(sha, strings.ToLower(p.SHA)) {
+					return p.ID, nil
+				}
+			}
+		}
+		// 查询失败不立即放弃：在窗口内重试（瞬时网络/限流）。
+
+		if time.Now().After(deadline) {
+			tag := target.WatchTag
+			if tag == "" {
+				tag = target.RepoName
+			}
+			return 0, fmt.Errorf(
+				"timeout after %s: no pipeline found for tag %s (commit %s)\n\nPossible causes:\n  • the tag was created locally but not pushed yet (use -p or push it manually)\n  • no workflow/pipeline listens to tag push events for this repository",
+				watchSHAWaitTimeout, tag, shaShort)
+		}
+
+		select {
+		case <-ctx.Done():
+			fmt.Println()
+			fmt.Printf("Watch stopped while waiting for pipeline of %s (%s).\n", target.WatchTag, shaShort)
+			return 0, nil
+		case <-time.After(watchSHAPollEvery):
+		}
+	}
+}
+
+// runWatchPollLoop 渲染状态行并按 5s 间隔轮询直到终态/取消。
+func runWatchPollLoop(target WatchTarget, targetID int, ctx context.Context, pipeline *cicd.Pipeline) error {
 	// 打印 pipeline URL（开始时）
 	printPipelineURL(pipeline)
 
@@ -234,6 +318,7 @@ func runWatchLoop(target WatchTarget, targetID int, cmd *cobra.Command) error {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
+	var err error
 	for {
 		// 渲染状态行
 		fmt.Printf("\r  %s  #%d  %s  %s  (%s)",
