@@ -1,0 +1,98 @@
+# grepom 内置 gitleaks 误报放行层 —— 叠加在官方默认规则之上
+# 本文件只定义放行(allowlists),不含规则;默认规则集由 loadConfig 经
+# detect.NewDetectorDefaultConfig 提供(不走 [extend]:gitleaks 的 extendDepth
+# 是包级只增变量,同进程多次 Translate 会静默丢规则)。
+#
+# 维护约定(忽略力度,从严到宽,改前先读):
+#   1) 模式级放行仅限"语义上不可能是秘密":公钥/完整性指纹/自明占位符/代码惯用法;
+#   2) 其余一律按完整值逐一放行(等值匹配,不做前缀通配),注释写日期+原因;
+#   3) 路径级豁免只给"逐值枚举不完"的场景(如扫描器自身测试夹具);
+#   4) 真实凭据永不进本文件 —— 先轮换处置,再谈忽略。
+# 全量重扫 grepom scan 验证;回归样本见 allowlist_test.go。
+
+[extend]
+useDefault = true
+
+# ---- 模式级:语义上不可能是秘密 ----
+[[allowlists]]
+description = "RSA 公钥(X.509 SubjectPublicKeyInfo)与自明示例/占位 token"
+regexTarget = "match"
+regexes = [
+  # RSA 公钥 DER 序列头(1024/2048);私钥体不会以这两段开头
+  'MIGfMA0GCSqGSIb3DQEB',
+  'MIIBIjANBgkqhkiG9w0BAQEF',
+  # 纯顺序数字占位(文档示例,如 sk-1234567890abcdef)
+  'sk-1234567890(abcdef)?',
+  # 自明的测试假 key(测试夹具惯用)
+  'sk-(test|integration)[a-z0-9-]*',
+  # PEM/DER 格式名字面量被误当值(如 node-rsa 的 'pkcs8-private-pem')
+  'pkcs[18]-(pem|der|private|public)',
+]
+
+# ---- 行上下文级:值本身是哈希/指纹/代码 ----
+[[allowlists]]
+description = "完整性指纹行(sha256 摘要、fingerprint/checksum/digest JSON 字段)"
+regexTarget = "line"
+regexes = [
+  '(?i)"(sha256|fingerprint|checksum|digest)[a-zA-Z_]*"\s*:',
+  '(?i)\bsha256:?[0-9a-f]{16,}\b',
+  # jsencrypt 库源码内构造 PEM 的模板字符串(非真实密钥)
+  'var key = "-----BEGIN RSA PRIVATE KEY',
+  # README/curl 文档里的示例读写 token(write123 等)
+  '(?i)authorization:\s*bearer\s+(read|write)(123|456)\b',
+]
+
+[[allowlists]]
+description = "代码惯用法(MATLAB jsonlab 取值语句 val=struct.key)"
+regexTarget = "line"
+regexes = [
+  'val\s*=\s*[A-Za-z_][\w.]*\.key\b',
+]
+
+# ---- 路径级:逐值枚举不完的测试夹具 ----
+[[allowlists]]
+description = "ui-templates-skill 发制证据指纹(机器生成的 sha256;路径与 64-hex 行同时命中才放行)"
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '"[A-Za-z0-9_-]+":\\s*"[0-9a-f]{64}"',
+]
+paths = [
+  '(^|/)governance/',
+  '(^|/)openspec/',
+]
+
+[[allowlists]]
+description = "grepom 自身扫描器测试夹具(人为构造的假私钥/假值)"
+paths = [
+  '(^|/)scanner/scanner_test\.go$',
+]
+
+# ---- 值级:逐一确认无害的具体值 ----
+[[allowlists]]
+description = "已逐一确认的具体值(等值放行,原因见行内注释)"
+regexTarget = "match"
+regexes = [
+  # 2026-09-11 apollo-client-cpp:README/tests 引用的 Apollo 官方 demo server(81.68.181.139,上游文档公开示例)
+  '4a46a5e6e6994c1599ddca631f09ecb3',
+  '6360216c46724c16b4dd2a511c8ba3fb',
+  # 2026-09-11 dotfiles 测试夹具(自明假值)
+  'actual-env-secret-123',
+  'actual-environment-secret-987',
+  # 2026-09-11 sage 本地烟测/dev 夹具(base64 解码为可读英文,注释自证仅本地)
+  'c2FnZS1sb2NhbC1kZXYtc2VjcmV0LW1hc3Rlci1reSE=',
+  'admission-key-1',
+  'resolved-secret-12345',
+  'secret_12345678',
+  # 2026-09-11 cooking proxy.py:shoplazza 2022 教程示例,JWT 早已过期(两条 JWT 以签名尾段登记)
+  '5vHWAWDQnVx7whmy0DQocQtKRnb281cWHHHlbumbUSE',
+  'Z1WLkmwE47by4uPb2mPnG93lCuxwsp2ZBAA_abCZEJo',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJhdWQiOiJyZWNvbW1lbmRfYXBwIiwiZXhwIjoxNjQ5Njg2NjE0LCJpYXQiOjE2NDk2ODY1OTQsImlzcyI6InNob3BsYXp6YSIsIm5iZiI6MTY0OTY4NjU5NCwic3ViIjoiMjAwMzYxIiwiZG9tYWluIjoiIn0\.UPRhgsKyR_h9_5jSl4Y3Kq1YGwFcDqepf4sJH_jD_0o',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJhdWQiOiJyZWNvbW1lbmRfYXBwIiwiZXhwIjoxNjQ5Njg2OTcxLCJpYXQiOjE2NDk2ODY5NTEsImlzcyI6InNob3BsYXp6YSIsIm5iZiI6MTY0OTY4Njk1MSwic3ViIjoiMzA5NjI1IiwiZG9tYWluIjoiIn0\.eUFEfl6ep9zxY9z70Jq1KGAZgCvj8Ar4gDzcZLwm7uc',
+  # 2026-09-11 machine-learning:天池平台官方数据集下载片段自带的公共 STS(平台自有临时凭证,非用户密钥)
+  'CAIS4QJ1q6Ft5B2yfSjIr5b9OM\+NrI0Tw6\+gNGjDnmQEeuFt1vTdjzz2IHhPfHlpAe0Zs/Q/nWpW6PYclrhvQKhJTFDNacJ62ckMqFP9OdJvZg0TU\+VW5qe\+EE2/VjQ3ta27OpcPJbGwU/OpbE\+\+2U0X6LDmdDKkckW4OJmS8/BOZcgWWQ/KClgjA8xNdCRvtOgQN3baKYypUHjQj3HXEVBjtydllGp78t7f\+MCH7QfEh1CI8o0zro/qcJ\+/dJsubtUtT9a82ud2d\+/b2SVdrgBQ86szl6wD9zbDs5aHClJcpBmBOPfR/9tzN0gkPfFqR/QDt/H5jfl1jffOnYH211BGJv8XcVyGGNn5kJqbQLrxZ4hnKOamARmXjIDTbKuSmhg/fHcWODlNf9ccMXJqAXQuMGqCcff3oQiXPVrzG/Hfjv9mj4AL01Th\+9GKJh2DSqmQyisEf4Ika0QhOw7HFbUX1ESvGRqAAVEtDe0F0BskOZ2TWIRx0PM9xY\+sC/QUtKFLwx/7CpB7Iml2DGGDsLwqHnVOHvxElEenTot2Iod/\+Q7ODzNRDVVRbSJwNuQ57MwzSkgI6XhM5mb1GVo04xI4ZSnH4W7gYYpFNtmSeAppDEBY/pK3ulmv/hlPIBXQ1ynVzs66fqkDIAA=',
+  # 2026-09-11 cooking/rsa.md:公开教程流传的 RSA 私钥片段(公私钥对不匹配,无对应真实系统)
+  'MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAI6FDzV8kQoj9vT6Iq0rT9Y3vBwwkq4YvlCHO5EPIUsIANso\+QHu4Yp\+RDVANye2NnyTj6bHagYEoXkTW9IH5sPtI/t\+RKAOZ0LMYtIlfThD0f3nG4R8WxNfBbx0aHi5AMW391MhjZYDHxGcaGIkUqrrL2aP61yh\+fMttA1/LY\+hAgMBAAECgYBuMZNA17\+NB6G6aGzHV\+WyzAU2Bphi497ChM0Zq4kial2/Fj7xr7HTUy2Jvszmd4xJZg579VOUs5/l7YHhMxrI2sUadaenkdJ/LmdHICRT4BAFdDnM78UsY1/YgtoA06r63ZkaE6PJ2UPMCgcYMqV5OkAFwt8oTDSGlBb4EZuUAQJBAMbR\+tolF96tHPb96BKbowIytRQZpC3KMutnzY74davY4BvAnvzoUTs0d89Xi\+1\+YxmI0UahejGdyMEWOryNJYkCQQC3gf3B8Kmaic3hz1ghslsdY5n1sE8piJH/9owvToc54MVQc9sfFC9f\+e6v8yjblHFeaoYTL6NUz9MUmeHAgatZAkB\+VGnaNnuGR\+UBo6/UMwROnz2jue8yESptnZVlZMYQHUu5FplvBYan4dzG6E/G5em\+Dcs739qusB0hYyiLKfxRAkAiGKweqenJhgtUBqOYdzxIxKXpqZ272N1P0u6PJ6cmkOX4od438xcuXREFbkfMLNO3uFE7JWHSs17D\+CejDjTZAkAWlJVrwvcgdPDun/xF2FK8YoonJFPJxFD/jrVPuoZ\+HxYa9sytwuaAU8jTv8WDF4er1ZO4N3TENE\+SedxuH0zW',
+  # 2026-09-11 dockerfiles 历史遗留 jupyter token(文件已删除,服务已重建,仅存在于 git 历史)
+  'f9a3bd4e9f2c3be01cd629154cfb224c2703181e050254b5',
+]

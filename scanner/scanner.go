@@ -2,7 +2,9 @@ package scanner
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,10 +20,13 @@ import (
 	"github.com/zricethezav/gitleaks/v8/sources"
 )
 
+//go:embed gitleaks.toml
+var defaultConfigData []byte
+
 // Options 配置 Scanner 的行为。
 type Options struct {
 	// GitleaksConfigPath 是自定义 gitleaks.toml 配置文件路径。
-	// 为空时使用 gitleaks 默认规则集。
+	// 为空时使用内置默认配置(官方默认规则 + 误报放行层,见 gitleaks.toml 头部维护约定)。
 	GitleaksConfigPath string
 	// MaxTargetMegaBytes 跳过超过此大小（MB）的文件。0 表示不限制。
 	MaxTargetMegaBytes int
@@ -38,31 +43,51 @@ func NewScanner(opts Options) *Scanner {
 }
 
 // loadConfig 加载 gitleaks 配置。
-// 如果指定了自定义配置路径则加载该文件，否则使用默认规则集。
+// 如果指定了自定义配置路径则加载该文件，否则使用:
+//   官方默认规则(NewDetectorDefaultConfig)+ 内置误报放行层(gitleaks.toml)。
+// 注意:自定义路径沿用 viper 单次 Translate;不走 [extend] 是因为 gitleaks 的
+// extendDepth 为包级只增变量,同进程多次带 extend 的 Translate 会静默丢规则。
 func (s *Scanner) loadConfig() (config.Config, error) {
 	if s.opts.GitleaksConfigPath != "" {
-		viper.SetConfigFile(s.opts.GitleaksConfigPath)
-		viper.SetConfigType("toml")
-		if err := viper.ReadInConfig(); err != nil {
+		v := viper.New()
+		v.SetConfigFile(s.opts.GitleaksConfigPath)
+		if err := v.ReadInConfig(); err != nil {
 			return config.Config{}, fmt.Errorf("failed to read gitleaks config: %w", err)
 		}
-		var vc config.ViperConfig
-		if err := viper.Unmarshal(&vc); err != nil {
-			return config.Config{}, fmt.Errorf("failed to parse gitleaks config: %w", err)
-		}
-		cfg, err := vc.Translate()
-		if err != nil {
-			return config.Config{}, fmt.Errorf("failed to translate gitleaks config: %w", err)
-		}
-		return cfg, nil
+		return parseViperConfig(v)
 	}
 
-	// 使用默认配置
-	detector, err := detect.NewDetectorDefaultConfig()
+	defaultDet, err := detect.NewDetectorDefaultConfig()
 	if err != nil {
 		return config.Config{}, fmt.Errorf("failed to load default gitleaks config: %w", err)
 	}
-	return detector.Config, nil
+	cfg := defaultDet.Config
+
+	// 内置放行层(只含 allowlists,不含规则,Translate 不会推进 extendDepth)
+	v := viper.New()
+	v.SetConfigType("toml")
+	if err := v.ReadConfig(bytes.NewReader(defaultConfigData)); err != nil {
+		return config.Config{}, fmt.Errorf("failed to parse embedded gitleaks config: %w", err)
+	}
+	extra, err := parseViperConfig(v)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.Allowlists = append(cfg.Allowlists, extra.Allowlists...)
+	return cfg, nil
+}
+
+// parseViperConfig 将 viper 配置翻译为 gitleaks config.Config。
+func parseViperConfig(v *viper.Viper) (config.Config, error) {
+	var vc config.ViperConfig
+	if err := v.Unmarshal(&vc); err != nil {
+		return config.Config{}, fmt.Errorf("failed to parse gitleaks config: %w", err)
+	}
+	cfg, err := vc.Translate()
+	if err != nil {
+		return config.Config{}, fmt.Errorf("failed to translate gitleaks config: %w", err)
+	}
+	return cfg, nil
 }
 
 // newDetectorForRepo 为指定仓库创建一个 Detector 实例。
