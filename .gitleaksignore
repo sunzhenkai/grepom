@@ -2,3 +2,8 @@
 21eecfbbdc901c359283fc27ca1ca5063ac28f7d:scanner/scanner_test.go:private-key:137
 21eecfbbdc901c359283fc27ca1ca5063ac28f7d:scanner/scanner_test.go:private-key:150
 21eecfbbdc901c359283fc27ca1ca5063ac28f7d:scanner/scanner_test.go:private-key:195
+93efdee57ed9e0f963786dc99dc5650c35f8e386:scanner/allowlist_test.go:private-key:101
+93efdee57ed9e0f963786dc99dc5650c35f8e386:scanner/allowlist_test.go:generic-api-key:64
+93efdee57ed9e0f963786dc99dc5650c35f8e386:scanner/allowlist_test.go:generic-api-key:70
+93efdee57ed9e0f963786dc99dc5650c35f8e386:scanner/allowlist_test.go:generic-api-key:78
+93efdee57ed9e0f963786dc99dc5650c35f8e386:scanner/allowlist_test.go:generic-api-key:81
