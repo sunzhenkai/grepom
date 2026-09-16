@@ -24,6 +24,10 @@ type Finding struct {
 	Description string   `json:"description"`
 	Secret      string   `json:"secret"`
 	Severity    Severity `json:"severity"`
+	// Commit 与 Fingerprint 仅在历史扫描（ScanGitHistory）下有值，
+	// Fingerprint 可直接写入仓库 .gitleaksignore 进行豁免。
+	Commit      string `json:"commit,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // MaskSecret 对 secret 进行部分脱敏，仅显示前 8 个字符，其余用 "..." 替代。

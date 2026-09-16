@@ -171,6 +171,8 @@ func convertFindings(findings []report.Finding, repoName string) []Finding {
 			Description: f.Description,
 			Secret:      f.Secret,
 			Severity:    severityFromTags(f.Tags),
+			Commit:      f.Commit,
+			Fingerprint: f.Fingerprint,
 		})
 	}
 	return result
