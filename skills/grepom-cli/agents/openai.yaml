@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grepom CLI"
+  short_description: "管理多个 Git 仓库与本地服务的 grepom CLI"
+  default_prompt: "Use $grepom-cli to inspect or manage multiple Git repositories through grepom commands."

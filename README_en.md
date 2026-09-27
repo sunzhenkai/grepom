@@ -54,6 +54,30 @@ go install github.com/wii/grepom@latest
 make install
 ```
 
+### Agent skill (optional)
+
+The repository includes [`skills/grepom-cli/SKILL.md`](./skills/grepom-cli/SKILL.md) to guide agents through grepom multi-repository tasks, config discovery, and safety gates.
+
+Install into the current project:
+
+```bash
+npx skills add sunzhenkai/grepom -s grepom-cli -y
+```
+
+Install globally for the user:
+
+```bash
+npx skills add sunzhenkai/grepom -s grepom-cli -g -y
+```
+
+List available skills first:
+
+```bash
+npx skills add sunzhenkai/grepom --list
+```
+
+The skill only documents CLI usage; configure MCP tools separately with `grepom mcp install <agent>`. Remote installation is available once this skill is present in the remote repository; on the current branch, use `npx skills add . --list` for local discovery validation.
+
 ## Quick Start
 
 ```bash
@@ -149,7 +173,7 @@ grepom interactive                  # Start interactive mode
 
 # Sync & Discovery
 grepom sync                         # Discover repos and update config metadata
-grepom sync --source my-gitlab      # Sync a specific resource by name
+grepom sync --resource my-gitlab     # Sync a specific resource by name
 grepom sync --group frontend        # Sync a specific group
 grepom sync --vgroup work           # Sync all real groups in a virtual group
 grepom sync --include-deleted       # Include recycle-bin (deletion_scheduled) repos
@@ -199,7 +223,7 @@ grepom search web                   # Search repos by name (substring match)
 grepom search web --group frontend  # Search within a specific group
 grepom search web --vgroup work     # Search within all real groups in a virtual group
 
-grepom dir                          # Print base directory path
+grepom dir                          # Print config directory path
 grepom dir web-app                  # Print a repo's local path
 grepom dir web --group fe           # Search within a group and print path
 cd "$(grepom dir web-app)"          # Quickly jump to a repo directory

@@ -54,6 +54,30 @@ go install github.com/wii/grepom@latest
 make install
 ```
 
+### Agent skill（可选）
+
+仓库自带 [`skills/grepom-cli/SKILL.md`](./skills/grepom-cli/SKILL.md)，供 agent 在执行 grepom 多仓任务时按 CLI、配置发现与安全门禁操作。
+
+当前项目安装：
+
+```bash
+npx skills add sunzhenkai/grepom -s grepom-cli -y
+```
+
+全局安装到用户级：
+
+```bash
+npx skills add sunzhenkai/grepom -s grepom-cli -g -y
+```
+
+先查看可用 skill：
+
+```bash
+npx skills add sunzhenkai/grepom --list
+```
+
+skill 只提供 CLI 使用指导；配置 MCP 工具请另行运行 `grepom mcp install <agent>`，两者互不替代。远程安装需在该 skill 已进入远程仓库后执行；当前分支可用 `npx skills add . --list` 做本地发现验证。
+
 ## 快速开始
 
 ```bash
@@ -149,7 +173,7 @@ grepom interactive                  # 进入交互式操作模式
 
 # 同步与发现
 grepom sync                         # 发现仓库并更新配置元数据
-grepom sync --source my-gitlab      # 按资源名同步
+grepom sync --resource my-gitlab     # 按资源名同步
 grepom sync --group frontend        # 按组同步
 grepom sync --vgroup work           # 同步虚拟分组包含的所有真实 group
 grepom sync --include-deleted       # 包含回收站（deletion_scheduled）中的仓库
@@ -197,7 +221,7 @@ grepom search web                   # 按名称模糊搜索仓库
 grepom search web --group frontend  # 在指定组内搜索
 grepom search web --vgroup work     # 在虚拟分组包含的所有真实 group 内搜索
 
-grepom dir                          # 输出 base 目录路径
+grepom dir                          # 输出配置文件所在目录路径
 grepom dir web-app                  # 输出仓库的本地路径
 grepom dir web --group fe           # 在指定组内搜索并输出路径
 cd "$(grepom dir web-app)"          # 快速跳转到仓库目录
